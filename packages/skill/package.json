@@ -2,6 +2,7 @@
   "name": "@tdk/skill",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "Agent-facing authoring guide for TDK — the SKILL.md a coding agent loads to write and test templates.",
   "files": [
     "SKILL.md"
