@@ -1,0 +1,45 @@
+# HAND-WRITTEN ORACLE — the NONPROD (test) artifact of the Storefront Flavour Picker.
+# Authored from the spec: load() fetches the TEST catalog over HTTP, which serves
+# vanilla + chocolate ONLY (no pistachio-royale — that is prod-only). The storefront
+# shelf is test-shelf. The tests diff the compiled TEST artifact against this,
+# value-for-value. The mock-server test proves the same catalog arrives over a real
+# fetch; this gold is the fixture-tier oracle.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: storefront-flavour-picker
+  title: Storefront Flavour Picker
+  description: Pick the featured flavour from the live storefront catalog.
+  tags:
+    - bakery
+    - menu
+    - catalog
+spec:
+  type: service
+  owner: team-bakery
+  parameters:
+    - title: Storefront
+      required:
+        - featuredFlavour
+        - headline
+      properties:
+        featuredFlavour:
+          type: string
+          title: Featured flavour
+          # TEST catalog — vanilla + chocolate ONLY (no pistachio-royale).
+          enum:
+            - vanilla
+            - chocolate
+        headline:
+          type: string
+          title: Storefront headline
+  steps:
+    - id: publish
+      name: Publish to the storefront
+      action: bakery:publish-menu
+      input:
+        featuredFlavour: ${{ parameters.featuredFlavour }}
+        headline: ${{ parameters.headline }}
+        shelf: test-shelf
+  output:
+    featured: ${{ parameters.featuredFlavour }}

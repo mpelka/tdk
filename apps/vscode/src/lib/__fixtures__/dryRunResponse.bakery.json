@@ -1,0 +1,89 @@
+{
+  "log": [
+    {
+      "body": {
+        "message": "Starting up task with 3 steps"
+      }
+    },
+    {
+      "body": {
+        "stepId": "build-ticket",
+        "status": "processing",
+        "message": "Beginning step Build the order ticket"
+      }
+    },
+    {
+      "body": {
+        "stepId": "build-ticket",
+        "message": "\u001b[32minfo\u001b[39m: Running roadiehq:utils:jsonata in dry-run mode with inputs (secrets redacted): {\n  \"data\": {\n    \"customerName\": \"Alice Baker\",\n    \"items\": [\n      {\n        \"sku\": \"CROISSANT\",\n        \"qty\": 12,\n        \"options\": [\n          \"butter\",\n          \"extra-flaky\"\n        ]\n      },\n      {\n        \"sku\": \"SOURDOUGH\",\n        \"qty\": 2,\n        \"options\": []\n      }\n    ],\n    \"priority\": \"high\",\n    \"discountCode\": \"20OFF\"\n  },\n  \"expression\": \"(\\n  $assert((customerName != \\\"\\\"), \\\"customerName is required\\\");\\n  $lineItems := [\\n    items.({\\\"sku\\\": sku, \\\"qty\\\": qty, \\\"unitPrice\\\": ($boolean(unitPrice) ? unitPrice : 0), \\\"label\\\": $join([options.($)], \\\", \\\"), \\\"lineTotal\\\": (($boolean(unitPrice) ? unitPrice : 0) * qty)})\\n  ];\\n  $baseFee := 5;\\n  $rushFee := ((priority = \\\"high\\\") ? 15 : 0);\\n  $total := (($boolean($baseFee) ? $baseFee : 0) + ($boolean($rushFee) ? $rushFee : 0));\\n  $base := {\\\"channel\\\": \\\"web\\\", \\\"rush\\\": false};\\n  $meta := ((priority = \\\"high\\\")\\n    ? $merge([$base, {\\\"rush\\\": true}])\\n    : $merge([$base, {\\\"priority\\\": priority}]));\\n  {\\n    \\\"summary\\\": (\\\"Order for \\\" & (customerName) & \\\" — \\\" & (priority) & \\\" priority (\\\" & (($type(items) = \\\"string\\\" ? $length(items) : $count(items))) & \\\" item(s))\\\"),\\n    \\\"lineItems\\\": $lineItems,\\n    \\\"total\\\": $total,\\n    \\\"meta\\\": $meta,\\n    \\\"discountPct\\\": (\\n      $__pi1 := $match(discountCode, /^\\\\s*([-+]?)([0-9]+)/);\\n      $exists($__pi1) ? ($__pi2 := $number($__pi1.groups[1]); $__pi1.groups[0] = \\\"-\\\" ? -$__pi2 : $__pi2)\\n    )\\n  }\\n)\"\n} {\"span_id\":\"0000000000000000\",\"trace_flags\":\"00\",\"trace_id\":\"00000000000000000000000000000000\"}"
+      }
+    },
+    {
+      "body": {
+        "stepId": "build-ticket",
+        "status": "completed",
+        "message": "Finished step Build the order ticket"
+      }
+    },
+    {
+      "body": {
+        "stepId": "log-ticket",
+        "status": "processing",
+        "message": "Beginning step Log the assembled ticket"
+      }
+    },
+    {
+      "body": {
+        "stepId": "log-ticket",
+        "message": "\u001b[32minfo\u001b[39m: Running debug:log in dry-run mode with inputs (secrets redacted): {\n  \"message\": \"Ticket: Order for Alice Baker — high priority (2 item(s))\"\n} {\"span_id\":\"0000000000000000\",\"trace_flags\":\"00\",\"trace_id\":\"00000000000000000000000000000000\"}"
+      }
+    },
+    {
+      "body": {
+        "stepId": "log-ticket",
+        "message": "\u001b[32minfo\u001b[39m: {\n  \"message\": \"Ticket: Order for Alice Baker — high priority (2 item(s))\"\n} {\"span_id\":\"0000000000000000\",\"trace_flags\":\"00\",\"trace_id\":\"00000000000000000000000000000000\"}"
+      }
+    },
+    {
+      "body": {
+        "stepId": "log-ticket",
+        "message": "\u001b[32minfo\u001b[39m: Ticket: Order for Alice Baker — high priority (2 item(s)) {\"span_id\":\"0000000000000000\",\"trace_flags\":\"00\",\"trace_id\":\"00000000000000000000000000000000\"}"
+      }
+    },
+    {
+      "body": {
+        "stepId": "log-ticket",
+        "status": "completed",
+        "message": "Finished step Log the assembled ticket"
+      }
+    }
+  ],
+  "directoryContents": [],
+  "output": {
+    "customer": "Alice Baker"
+  },
+  "steps": [
+    {
+      "action": "roadiehq:utils:jsonata",
+      "id": "build-ticket",
+      "name": "Build the order ticket",
+      "input": {
+        "data": {
+          "customerName": "${{ parameters.customerName }}",
+          "items": "${{ parameters.items }}",
+          "priority": "${{ parameters.priority }}",
+          "discountCode": "${{ parameters.discountCode }}"
+        },
+        "expression": "(\n  $assert((customerName != \"\"), \"customerName is required\");\n  $lineItems := [\n    items.({\"sku\": sku, \"qty\": qty, \"unitPrice\": ($boolean(unitPrice) ? unitPrice : 0), \"label\": $join([options.($)], \", \"), \"lineTotal\": (($boolean(unitPrice) ? unitPrice : 0) * qty)})\n  ];\n  $baseFee := 5;\n  $rushFee := ((priority = \"high\") ? 15 : 0);\n  $total := (($boolean($baseFee) ? $baseFee : 0) + ($boolean($rushFee) ? $rushFee : 0));\n  $base := {\"channel\": \"web\", \"rush\": false};\n  $meta := ((priority = \"high\")\n    ? $merge([$base, {\"rush\": true}])\n    : $merge([$base, {\"priority\": priority}]));\n  {\n    \"summary\": (\"Order for \" & (customerName) & \" — \" & (priority) & \" priority (\" & (($type(items) = \"string\" ? $length(items) : $count(items))) & \" item(s))\"),\n    \"lineItems\": $lineItems,\n    \"total\": $total,\n    \"meta\": $meta,\n    \"discountPct\": (\n      $__pi1 := $match(discountCode, /^\\s*([-+]?)([0-9]+)/);\n      $exists($__pi1) ? ($__pi2 := $number($__pi1.groups[1]); $__pi1.groups[0] = \"-\" ? -$__pi2 : $__pi2)\n    )\n  }\n)"
+      }
+    },
+    {
+      "action": "debug:log",
+      "id": "log-ticket",
+      "name": "Log the assembled ticket",
+      "input": {
+        "message": "${{ (\"Ticket: \" ~ (steps[\"build-ticket\"].output.result.summary)) }}"
+      }
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+publish vanilla (test menu):
+  steps:
+    publish:
+      input:
+        featuredFlavour: vanilla
+        headline: Fresh vanilla, all week
+        cluster: test-oven
+      output:
+        url: https://storefront.example/menu
+  output:
+    featured: vanilla
+publish chocolate (test menu):
+  steps:
+    publish:
+      input:
+        featuredFlavour: chocolate
+        headline: Double chocolate season
+        cluster: test-oven
+      output:
+        url: https://storefront.example/menu
+  output:
+    featured: chocolate
+publish with a long headline:
+  steps:
+    publish:
+      input:
+        featuredFlavour: vanilla
+        headline: Our seasonal vanilla is back — pre-order now for the weekend rush
+        cluster: test-oven
+      output:
+        url: https://storefront.example/menu
+  output:
+    featured: vanilla

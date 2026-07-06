@@ -1,0 +1,11 @@
+# Ship only the bundled output. Both bundles (extension host + webview) are
+# self-contained in dist/ — node_modules must never enter the vsix (pair this
+# with `vsce package --no-dependencies`).
+src/**
+build.ts
+tsconfig.json
+node_modules/**
+*.vsix
+.gitignore
+# Sourcemaps roughly double the payload; an installed extension doesn't need them.
+**/*.map

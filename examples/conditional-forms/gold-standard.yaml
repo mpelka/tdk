@@ -1,0 +1,132 @@
+# HAND-WRITTEN ORACLE — the Custom Cake Order Wizard as a Backstage expert would
+# author its scaffolder YAML by hand, BEFORE the TDK template was compiled. The
+# template.test.ts asserts the COMPILED entity agrees with this gold value-for-value
+# (never byte-for-byte). Do not regenerate it from compiled output.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: custom-cake-order-wizard
+  title: Custom Cake Order Wizard
+  description: Order a bespoke cake — the form reveals extra fields as you choose.
+  tags:
+    - cake
+    - order
+    - bakery
+    - wizard
+spec:
+  type: service
+  owner: team-bakery
+  parameters:
+    # --- Page 1: order type + the wedding showWhen chain (same-page controller) --
+    # `orderType` reveals `tiers` + `topper` in its wedding branch; inside that
+    # branch `topper` nests a dependency revealing `topperText` (two levels deep).
+    - title: Order Type
+      required:
+        - orderType
+      properties:
+        orderType:
+          type: string
+          title: Order type
+          enum:
+            - standard
+            - custom
+            - wedding
+      dependencies:
+        orderType:
+          oneOf:
+            - properties:
+                orderType:
+                  const: standard
+            - properties:
+                orderType:
+                  const: custom
+            - properties:
+                orderType:
+                  const: wedding
+                tiers:
+                  type: number
+                  title: Number of tiers
+                topper:
+                  type: boolean
+                  title: Add a cake topper?
+              dependencies:
+                topper:
+                  oneOf:
+                    - properties:
+                        topper:
+                          const: true
+                        topperText:
+                          type: string
+                          title: Topper text
+                    - properties:
+                        topper:
+                          const: false
+
+    # --- Page 2: packaging (dep.when) + rush (rawDependencies), DISTINCT controllers
+    - title: Packaging & Speed
+      properties:
+        packaging:
+          type: string
+          title: Packaging
+          enum:
+            - box
+            - ribbon
+        rush:
+          type: boolean
+          title: Rush order?
+      dependencies:
+        # dep.when(packaging): the ribbon branch reveals `ribbonColor`.
+        packaging:
+          oneOf:
+            - properties:
+                packaging:
+                  const: box
+            - properties:
+                packaging:
+                  const: ribbon
+                ribbonColor:
+                  type: string
+                  title: Ribbon colour
+        # rawDependencies passthrough on `rush` — emitted VERBATIM beside the
+        # compiled dep.when tree (TDK never re-shapes it).
+        rush:
+          oneOf:
+            - properties:
+                rush:
+                  const: false
+            - properties:
+                rush:
+                  const: true
+                rushJustification:
+                  type: string
+                  title: Why is this order urgent?
+
+    # --- Page 3: the shared "Baker Notes" fragment (used verbatim) -----------
+    # `contactEmail` carries a human `errorMessage` (issue #59). The authored STRING
+    # covers both failures: it sits on the field (its `format: email` failure) AND
+    # lifts to the page's `errorMessage.required` (its missing-value failure), so
+    # ajv-errors renders one message either way instead of ajv's raw phrasing.
+    - title: Baker Notes
+      required:
+        - contactEmail
+      errorMessage:
+        required:
+          contactEmail: Enter a valid contact email so the baker can reach you.
+      properties:
+        bakerNotes:
+          type: string
+          title: Notes for the baker
+          ui:widget: textarea
+        contactEmail:
+          type: string
+          title: Contact email
+          format: email
+          errorMessage: Enter a valid contact email so the baker can reach you.
+  steps:
+    - id: log-order
+      name: Log the order
+      action: debug:log
+      input:
+        message: "Order type: ${{ parameters.orderType }}"
+  output:
+    orderType: ${{ parameters.orderType }}

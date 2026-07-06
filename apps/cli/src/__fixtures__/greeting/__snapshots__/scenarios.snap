@@ -1,0 +1,7 @@
+orders for alice:
+  steps:
+    order:
+      input:
+        cluster: test-cluster
+        message: Order for Alice!
+      output: {}

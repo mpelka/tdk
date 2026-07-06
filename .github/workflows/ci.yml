@@ -1,0 +1,21 @@
+# CI gates (issue #1): the two checks the eval lane proved load-bearing —
+# typecheck + bun test — enforced on every PR and on main.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install (frozen lockfile)
+        run: bun install --frozen-lockfile
+      - name: Run the CI gate
+        run: bun run ci

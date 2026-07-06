@@ -1,0 +1,136 @@
+{
+  "name": "tdk-vscode",
+  "displayName": "TDK — Template Development Kit",
+  "description": "Author, preview, and test Backstage Scaffolder templates written with @tdk/core.",
+  "version": "0.0.1",
+  "private": true,
+  "publisher": "tdk",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tdk/tdk.git",
+    "directory": "apps/vscode"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:**/__fixtures__/scenarios.ts",
+    "onCommand:tdk.compilePreview",
+    "onCommand:tdk.formPreview"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "tdk.compilePreview",
+        "title": "TDK: Compile Preview"
+      },
+      {
+        "command": "tdk.formPreview",
+        "title": "TDK: Open Form Preview"
+      },
+      {
+        "command": "tdk.formPreview.openFromTest",
+        "title": "TDK: Open in Form Preview"
+      },
+      {
+        "command": "tdk.formPreview.pickEnv",
+        "title": "TDK: Pick Form Preview Env"
+      },
+      {
+        "command": "tdk.formPreview.pickScenario",
+        "title": "TDK: Pick Form Preview Scenario"
+      },
+      {
+        "command": "tdk.backstage.setToken",
+        "title": "TDK: Set Backstage Token"
+      },
+      {
+        "command": "tdk.backstage.setBaseUrl",
+        "title": "TDK: Set Backstage Base URL"
+      }
+    ],
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "tdkTracePanel",
+          "title": "TDK Trace",
+          "icon": "$(debug-alt)"
+        }
+      ]
+    },
+    "views": {
+      "tdkTracePanel": [
+        {
+          "id": "tdkTrace",
+          "type": "webview",
+          "name": "TDK Trace",
+          "contextualTitle": "TDK Trace"
+        }
+      ]
+    },
+    "menus": {
+      "testing/item/context": [
+        {
+          "command": "tdk.formPreview.openFromTest",
+          "when": "controllerId == tdkScenarios && testId =~ /::/",
+          "group": "tdk@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "tdk.formPreview.openFromTest",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "TDK",
+      "properties": {
+        "tdk.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the tdk CLI. When set, it wins over auto-detection (the workspace's node_modules/.bin/tdk, then PATH, then ~/.bun/bin/tdk)."
+        },
+        "tdk.backstage.baseUrl": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Base URL of the Backstage backend used for **Dry-run in Backstage** (for example `http://localhost:7007`). Leave empty to disable the dry-run (the feature prompts for setup). Also settable via the `TDK: Set Backstage Base URL` command. The token is stored separately via the `TDK: Set Backstage Token` command, never in settings."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "bun run build",
+    "build": "bun run build.ts",
+    "watch": "bun run build.ts --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.10.6",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/bun": "^1.3.14",
+    "@types/node": "^26.0.0",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "@fluentui/react-components": "^9.74.2",
+    "@rjsf/core": "^5",
+    "@rjsf/fluentui-rc": "^5",
+    "@rjsf/utils": "^5",
+    "@rjsf/validator-ajv8": "^5",
+    "ajv": "8.20.0",
+    "ajv-errors": "^3",
+    "react": "^18",
+    "react-dom": "^18",
+    "yaml": "^2.9.0"
+  }
+}

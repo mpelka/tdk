@@ -1,0 +1,44 @@
+# HAND-WRITTEN ORACLE — the PROD artifact of the Storefront Flavour Picker.
+# Authored from the spec: load() fetches the PROD catalog over HTTP, which serves
+# vanilla + chocolate + the prod-only pistachio-royale. The storefront shelf is
+# prod-shelf. The tests diff the compiled PROD artifact against this.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: storefront-flavour-picker
+  title: Storefront Flavour Picker
+  description: Pick the featured flavour from the live storefront catalog.
+  tags:
+    - bakery
+    - menu
+    - catalog
+spec:
+  type: service
+  owner: team-bakery
+  parameters:
+    - title: Storefront
+      required:
+        - featuredFlavour
+        - headline
+      properties:
+        featuredFlavour:
+          type: string
+          title: Featured flavour
+          # PROD catalog — includes the prod-only pistachio-royale.
+          enum:
+            - vanilla
+            - chocolate
+            - pistachio-royale
+        headline:
+          type: string
+          title: Storefront headline
+  steps:
+    - id: publish
+      name: Publish to the storefront
+      action: bakery:publish-menu
+      input:
+        featuredFlavour: ${{ parameters.featuredFlavour }}
+        headline: ${{ parameters.headline }}
+        shelf: prod-shelf
+  output:
+    featured: ${{ parameters.featuredFlavour }}

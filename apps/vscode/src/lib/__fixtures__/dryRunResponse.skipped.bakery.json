@@ -1,0 +1,118 @@
+{
+  "log": [
+    {
+      "body": {
+        "message": "Starting up task with 4 steps"
+      }
+    },
+    {
+      "body": {
+        "stepId": "log-order",
+        "status": "processing",
+        "message": "Beginning step Log the incoming order"
+      }
+    },
+    {
+      "body": {
+        "stepId": "log-order",
+        "message": "\u001b[32minfo\u001b[39m: Running debug:log in dry-run mode with inputs (secrets redacted): {\n  \"message\": \"Order for Bob Baker (normal priority)\"\n} {\"span_id\":\"0000000000000000\",\"trace_flags\":\"00\",\"trace_id\":\"00000000000000000000000000000000\"}"
+      }
+    },
+    {
+      "body": {
+        "stepId": "log-order",
+        "message": "\u001b[32minfo\u001b[39m: {\n  \"message\": \"Order for Bob Baker (normal priority)\"\n} {\"span_id\":\"0000000000000000\",\"trace_flags\":\"00\",\"trace_id\":\"00000000000000000000000000000000\"}"
+      }
+    },
+    {
+      "body": {
+        "stepId": "log-order",
+        "message": "\u001b[32minfo\u001b[39m: Order for Bob Baker (normal priority) {\"span_id\":\"0000000000000000\",\"trace_flags\":\"00\",\"trace_id\":\"00000000000000000000000000000000\"}"
+      }
+    },
+    {
+      "body": {
+        "stepId": "log-order",
+        "status": "completed",
+        "message": "Finished step Log the incoming order"
+      }
+    },
+    {
+      "body": {
+        "stepId": "rush-ticket",
+        "status": "processing",
+        "message": "Beginning step Raise a rush ticket"
+      }
+    },
+    {
+      "body": {
+        "stepId": "rush-ticket",
+        "status": "skipped",
+        "message": "Skipping step rush-ticket because its if condition was false"
+      }
+    },
+    {
+      "body": {
+        "stepId": "log-done",
+        "status": "processing",
+        "message": "Beginning step Log completion"
+      }
+    },
+    {
+      "body": {
+        "stepId": "log-done",
+        "message": "\u001b[32minfo\u001b[39m: Running debug:log in dry-run mode with inputs (secrets redacted): {\n  \"message\": \"Order for Bob Baker routed\"\n} {\"span_id\":\"0000000000000000\",\"trace_flags\":\"00\",\"trace_id\":\"00000000000000000000000000000000\"}"
+      }
+    },
+    {
+      "body": {
+        "stepId": "log-done",
+        "message": "\u001b[32minfo\u001b[39m: {\n  \"message\": \"Order for Bob Baker routed\"\n} {\"span_id\":\"0000000000000000\",\"trace_flags\":\"00\",\"trace_id\":\"00000000000000000000000000000000\"}"
+      }
+    },
+    {
+      "body": {
+        "stepId": "log-done",
+        "message": "\u001b[32minfo\u001b[39m: Order for Bob Baker routed {\"span_id\":\"0000000000000000\",\"trace_flags\":\"00\",\"trace_id\":\"00000000000000000000000000000000\"}"
+      }
+    },
+    {
+      "body": {
+        "stepId": "log-done",
+        "status": "completed",
+        "message": "Finished step Log completion"
+      }
+    }
+  ],
+  "directoryContents": [],
+  "output": {
+    "customer": "Bob Baker"
+  },
+  "steps": [
+    {
+      "action": "debug:log",
+      "id": "log-order",
+      "name": "Log the incoming order",
+      "input": {
+        "message": "${{ (\"Order for \" ~ (parameters.customerName) ~ \" (\" ~ (parameters.priority) ~ \" priority)\") }}"
+      }
+    },
+    {
+      "action": "debug:log",
+      "id": "rush-ticket",
+      "name": "Raise a rush ticket",
+      "input": {
+        "message": "${{ (\"RUSH ticket raised for \" ~ (parameters.customerName)) }}"
+      },
+      "if": "${{ (parameters.priority === \"high\") }}"
+    },
+    {
+      "action": "debug:log",
+      "id": "log-done",
+      "name": "Log completion",
+      "input": {
+        "message": "${{ (\"Order for \" ~ (parameters.customerName) ~ \" routed\") }}"
+      }
+    }
+  ]
+}

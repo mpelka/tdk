@@ -1,0 +1,51 @@
+# HAND-WRITTEN ORACLE — the Delivery Slot Notifier's Scaffolder YAML as a Backstage
+# expert would author it. The Nunjucks expressions below are written directly (their
+# own idiom), NOT copied from the transpiler. The tests render BOTH the compiled and
+# these hand-written expressions with the real nunjucks engine and assert they
+# produce the same STRING for every fixture — value-equivalence, never byte-equality.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: delivery-slot-notifier
+  title: Delivery Slot Notifier
+  description: Notify a baker of a delivery slot, filling gaps with sensible fallbacks.
+  tags:
+    - bakery
+    - delivery
+    - notify
+spec:
+  type: service
+  owner: team-bakery
+  parameters:
+    properties:
+      requestedSlot:
+        type: string
+        title: Requested slot
+      contactName:
+        type: string
+        title: Contact name
+      urgency:
+        type: number
+        title: Urgency (1–5)
+    required:
+      - urgency
+  steps:
+    - id: fetch-baker
+      name: Fetch the assigned baker
+      action: http:backstage:request
+      input:
+        path: /api/bakery/assignment
+    - id: notify
+      name: Compose the notification
+      action: debug:log
+      input:
+        # NULL-AWARE fallback: fire on null OR absent, but let a present "" through.
+        slot: ${{ parameters.requestedSlot if parameters.requestedSlot != null else "next-available" }}
+        # Fallback-then-method: pick the first truthy base, then upper-case it.
+        recipient: ${{ (parameters.contactName or steps["fetch-baker"].output.name) | upper }}
+        # Template literal → `~` concatenation with the numeric urgency.
+        banner: ${{ "Delivery slot — urgency " ~ parameters.urgency }}
+        # Comparison ternary.
+        tier: ${{ "URGENT" if parameters.urgency >= 3 else "standard" }}
+        # Verbatim method-call passthrough: the region prefix of the baker slug.
+        region: ${{ steps["fetch-baker"].output.name.split("-")[0] }}

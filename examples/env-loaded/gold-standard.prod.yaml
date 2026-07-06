@@ -1,0 +1,51 @@
+# HAND-WRITTEN ORACLE — the PROD artifact of the Seasonal Menu Publisher.
+# Authored from the spec: the PROD menu bakes vanilla + chocolate + the prod-only
+# pistachio-royale, the oven cluster is prod-oven, and the beta lifecycle still
+# restricts to baker-042. The tests diff the compiled PROD artifact against this.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: seasonal-menu-publisher
+  title: Seasonal Menu Publisher
+  description: Publish the seasonal cake menu to the storefront.
+  tags:
+    - bakery
+    - menu
+    - seasonal
+spec:
+  type: service
+  owner: team-bakery
+  # Emitted while pre-GA (state: beta) — invariant (b).
+  restrictedToUsers:
+    - baker-042
+  # extraSpec passthrough — invariant (c).
+  bakery_catalogue_metadata:
+    category_L1: Signature Bakes
+    refresh_cadence: weekly
+  parameters:
+    - title: Menu
+      required:
+        - featuredFlavour
+        - headline
+      properties:
+        featuredFlavour:
+          type: string
+          title: Featured flavour
+          # PROD menu — includes the prod-only pistachio-royale (invariant a).
+          enum:
+            - vanilla
+            - chocolate
+            - pistachio-royale
+        headline:
+          type: string
+          title: Storefront headline
+  steps:
+    - id: publish
+      name: Publish the menu
+      action: bakery:publish-menu
+      input:
+        featuredFlavour: ${{ parameters.featuredFlavour }}
+        headline: ${{ parameters.headline }}
+        cluster: prod-oven
+  output:
+    featured: ${{ parameters.featuredFlavour }}

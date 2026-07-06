@@ -1,0 +1,106 @@
+# HAND-WRITTEN ORACLE — the Order Ticket Builder as a Backstage expert would author
+# it by hand. The JSONata `expression` below is written in idiomatic JSONata (its
+# own layout, its own helper choices — e.g. `$sum` for the fee fold and a direct
+# `$count` for the item count), NOT copied from the transpiler. The tests assert the
+# COMPILED expression agrees with this one value-for-value AND throw-for-throw across
+# fixtures — never byte-for-byte (the layouts differ on purpose; a byte-identical
+# gold would prove nothing).
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: order-ticket-builder
+  title: Order Ticket Builder
+  description: Assemble an order ticket from the submitted line items.
+  tags:
+    - bakery
+    - order
+    - ticket
+spec:
+  type: service
+  owner: team-bakery
+  parameters:
+    properties:
+      customerName:
+        type: string
+        title: Customer name
+      items:
+        type: array
+        title: Line items
+        items:
+          type: object
+          properties:
+            sku:
+              type: string
+            qty:
+              type: number
+            options:
+              type: array
+              items:
+                type: string
+            unitPrice:
+              type: number
+      priority:
+        type: string
+        title: Priority
+        enum:
+          - low
+          - normal
+          - high
+      discountCode:
+        type: string
+        title: Discount code
+    required:
+      - customerName
+      - priority
+  steps:
+    - id: build-ticket
+      name: Build the order ticket
+      action: roadiehq:utils:jsonata
+      input:
+        data:
+          customerName: ${{ parameters.customerName }}
+          items: ${{ parameters.items }}
+          priority: ${{ parameters.priority }}
+          discountCode: ${{ parameters.discountCode }}
+        # Idiomatic hand-written JSONata. Same VALUES as the transpiled block:
+        #   - the $assert guard,
+        #   - lineItems with `unitPrice || 0` and an options label (join → scalar),
+        #   - a scalar `total` fold of the fee components,
+        #   - a spread-merged `meta` (priority override, later keys win),
+        #   - `discountPct` via a numeric-prefix match ($number of the prefix, or
+        #     missing when there is none — matching parseInt's lenient shim).
+        expression: |
+          (
+            $assert(customerName != "", "customerName is required");
+            $lineItems := [items.{
+              "sku": sku,
+              "qty": qty,
+              "unitPrice": unitPrice ? unitPrice : 0,
+              "label": $join(options, ", "),
+              "lineTotal": (unitPrice ? unitPrice : 0) * qty
+            }];
+            $baseFee := 5;
+            $rushFee := priority = "high" ? 15 : 0;
+            $total := ($baseFee ? $baseFee : 0) + ($rushFee ? $rushFee : 0);
+            $base := { "channel": "web", "rush": false };
+            $meta := priority = "high"
+              ? $merge([$base, { "rush": true }])
+              : $merge([$base, { "priority": priority }]);
+            $m := $match(discountCode, /^\s*([-+]?)([0-9]+)/);
+            {
+              "summary": "Order for " & customerName & " — " & priority & " priority (" & $string($count(items)) & " item(s))",
+              "lineItems": $lineItems,
+              "total": $total,
+              "meta": $meta,
+              "discountPct": $exists($m)
+                ? ($m.groups[0] = "-" ? -$number($m.groups[1]) : $number($m.groups[1]))
+                : undefined
+            }
+          )
+    - id: log-ticket
+      name: Log the assembled ticket
+      action: debug:log
+      input:
+        message: "Ticket: ${{ steps['build-ticket'].output.result.summary }}"
+  output:
+    customer: ${{ parameters.customerName }}

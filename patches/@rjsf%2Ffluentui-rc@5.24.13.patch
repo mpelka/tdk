@@ -1,0 +1,12 @@
+diff --git a/package.json b/package.json
+index 6a8a51bb0b7fae6da6400ae7337d55afc7bda2ab..e7fbe35727d753c99d1d4211216209a06d99a99e 100644
+--- a/package.json
++++ b/package.json
+@@ -41,6 +41,7 @@
+     "react": "^16.14.0 || >=17"
+   },
+   "dependencies": {
++    "@rjsf/core": "^5",
+     "@fluentui/react-components": "^9.46.3",
+     "@fluentui/react-icons": "^2.0.226",
+     "@fluentui/react-migration-v0-v9": "^9.1.14"

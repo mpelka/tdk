@@ -1,0 +1,54 @@
+provision a pastry oven:
+  steps:
+    provision:
+      input:
+        station: pastry
+        capacity: 12
+        model: deck-3000
+      output:
+        ovenId: oven-pastry-12
+        endpoint: https://ovens.example/pastry/12
+        ready: true
+    record:
+      input:
+        headBaker: baker-pastry-01
+        ovenId: oven-pastry-12
+  output:
+    station: pastry
+    ovenModel: deck-3000
+provision a bread oven:
+  steps:
+    provision:
+      input:
+        station: bread
+        capacity: 24
+        model: rack-500
+      output:
+        ovenId: oven-bread-24
+        endpoint: https://ovens.example/bread/24
+        ready: true
+    record:
+      input:
+        headBaker: baker-pastry-01
+        ovenId: oven-bread-24
+  output:
+    station: bread
+    ovenModel: rack-500
+provision a small pastry oven:
+  steps:
+    provision:
+      input:
+        station: pastry
+        capacity: 4
+        model: deck-3000
+      output:
+        ovenId: oven-pastry-4
+        endpoint: https://ovens.example/pastry/4
+        ready: true
+    record:
+      input:
+        headBaker: baker-pastry-01
+        ovenId: oven-pastry-4
+  output:
+    station: pastry
+    ovenModel: deck-3000

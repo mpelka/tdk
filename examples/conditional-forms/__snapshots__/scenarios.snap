@@ -1,0 +1,24 @@
+standard order — no wedding fields:
+  steps:
+    log-order:
+      input:
+        message: "Order type: standard"
+      output: {}
+  output:
+    orderType: standard
+wedding order — tiers + topper + topper text:
+  steps:
+    log-order:
+      input:
+        message: "Order type: wedding"
+      output: {}
+  output:
+    orderType: wedding
+custom rush order:
+  steps:
+    log-order:
+      input:
+        message: "Order type: custom"
+      output: {}
+  output:
+    orderType: custom

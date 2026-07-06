@@ -1,0 +1,6 @@
+[test]
+# Fixtures under src/__fixtures__/ are TEST SCAFFOLDING: the suite runs them to
+# drive LIBRARY coverage (the transpiler statement layer + the param model), but
+# the fixture files are not library code, so they are excluded from the coverage
+# report. The library under src/ proper is what the numbers reflect.
+coveragePathIgnorePatterns = ["**/__fixtures__/**"]

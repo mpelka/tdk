@@ -1,0 +1,29 @@
+{
+  "name": "tdk-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "examples"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "bun run --filter '*' typecheck",
+    "ci": "biome check . && bun run typecheck && bun test && bun run apps/cli/src/cli.ts test --ci",
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "check": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.0",
+    "@changesets/cli": "^2.27.0",
+    "@types/bun": "^1.3.14",
+    "@types/node": "^26.0.0",
+    "@tdk/cli": "workspace:*"
+  },
+  "patchedDependencies": {
+    "@rjsf/fluentui-rc@5.24.13": "patches/@rjsf%2Ffluentui-rc@5.24.13.patch"
+  }
+}

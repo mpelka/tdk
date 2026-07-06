@@ -1,0 +1,180 @@
+high priority — rush fee, two items, real discount:
+  steps:
+    build-ticket:
+      input:
+        data:
+          customerName: Alice
+          items:
+            - sku: CAKE-1
+              qty: 2
+              options:
+                - gluten-free
+                - vanilla
+              unitPrice: 10
+            - sku: TOPPER-1
+              qty: 1
+              options: []
+              unitPrice: 4
+          priority: high
+          discountCode: 15OFF
+        expression: >-
+          (
+            $assert((customerName != ""), "customerName is required");
+            $lineItems := [
+              items.({"sku": sku, "qty": qty, "unitPrice": ($boolean(unitPrice) ? unitPrice : 0), "label": $join([options.($)], ", "), "lineTotal": (($boolean(unitPrice) ? unitPrice : 0) * qty)})
+            ];
+            $baseFee := 5;
+            $rushFee := ((priority = "high") ? 15 : 0);
+            $total := (($boolean($baseFee) ? $baseFee : 0) + ($boolean($rushFee) ? $rushFee : 0));
+            $base := {"channel": "web", "rush": false};
+            $meta := ((priority = "high")
+              ? $merge([$base, {"rush": true}])
+              : $merge([$base, {"priority": priority}]));
+            {
+              "summary": ("Order for " & (customerName) & " — " & (priority) & " priority (" & (($type(items) = "string" ? $length(items) : $count(items))) & " item(s))"),
+              "lineItems": $lineItems,
+              "total": $total,
+              "meta": $meta,
+              "discountPct": (
+                $__pi1 := $match(discountCode, /^\s*([-+]?)([0-9]+)/);
+                $exists($__pi1) ? ($__pi2 := $number($__pi1.groups[1]); $__pi1.groups[0] = "-" ? -$__pi2 : $__pi2)
+              )
+            }
+          )
+      output:
+        result:
+          summary: Order for Alice — high priority (2 item(s))
+          lineItems:
+            - sku: CAKE-1
+              qty: 2
+              unitPrice: 10
+              label: gluten-free, vanilla
+              lineTotal: 20
+            - sku: TOPPER-1
+              qty: 1
+              unitPrice: 4
+              label: ""
+              lineTotal: 4
+          total: 20
+          meta:
+            channel: web
+            rush: true
+          discountPct: 15
+    log-ticket:
+      input:
+        message: "Ticket: Order for Alice — high priority (2 item(s))"
+  output:
+    customer: Alice
+normal priority — non-numeric-prefix discount → missing:
+  steps:
+    build-ticket:
+      input:
+        data:
+          customerName: Bob
+          items:
+            - sku: CAKE-2
+              qty: 1
+              options:
+                - chocolate
+              unitPrice: 8
+          priority: normal
+          discountCode: SAVE15x
+        expression: >-
+          (
+            $assert((customerName != ""), "customerName is required");
+            $lineItems := [
+              items.({"sku": sku, "qty": qty, "unitPrice": ($boolean(unitPrice) ? unitPrice : 0), "label": $join([options.($)], ", "), "lineTotal": (($boolean(unitPrice) ? unitPrice : 0) * qty)})
+            ];
+            $baseFee := 5;
+            $rushFee := ((priority = "high") ? 15 : 0);
+            $total := (($boolean($baseFee) ? $baseFee : 0) + ($boolean($rushFee) ? $rushFee : 0));
+            $base := {"channel": "web", "rush": false};
+            $meta := ((priority = "high")
+              ? $merge([$base, {"rush": true}])
+              : $merge([$base, {"priority": priority}]));
+            {
+              "summary": ("Order for " & (customerName) & " — " & (priority) & " priority (" & (($type(items) = "string" ? $length(items) : $count(items))) & " item(s))"),
+              "lineItems": $lineItems,
+              "total": $total,
+              "meta": $meta,
+              "discountPct": (
+                $__pi1 := $match(discountCode, /^\s*([-+]?)([0-9]+)/);
+                $exists($__pi1) ? ($__pi2 := $number($__pi1.groups[1]); $__pi1.groups[0] = "-" ? -$__pi2 : $__pi2)
+              )
+            }
+          )
+      output:
+        result:
+          summary: Order for Bob — normal priority (1 item(s))
+          lineItems:
+            - sku: CAKE-2
+              qty: 1
+              unitPrice: 8
+              label: chocolate
+              lineTotal: 8
+          total: 5
+          meta:
+            channel: web
+            rush: false
+            priority: normal
+    log-ticket:
+      input:
+        message: "Ticket: Order for Bob — normal priority (1 item(s))"
+  output:
+    customer: Bob
+low priority — free-text discount code → missing, zero-price item:
+  steps:
+    build-ticket:
+      input:
+        data:
+          customerName: Cleo
+          items:
+            - sku: CAKE-3
+              qty: 3
+              options:
+                - red-velvet
+          priority: low
+          discountCode: none
+        expression: >-
+          (
+            $assert((customerName != ""), "customerName is required");
+            $lineItems := [
+              items.({"sku": sku, "qty": qty, "unitPrice": ($boolean(unitPrice) ? unitPrice : 0), "label": $join([options.($)], ", "), "lineTotal": (($boolean(unitPrice) ? unitPrice : 0) * qty)})
+            ];
+            $baseFee := 5;
+            $rushFee := ((priority = "high") ? 15 : 0);
+            $total := (($boolean($baseFee) ? $baseFee : 0) + ($boolean($rushFee) ? $rushFee : 0));
+            $base := {"channel": "web", "rush": false};
+            $meta := ((priority = "high")
+              ? $merge([$base, {"rush": true}])
+              : $merge([$base, {"priority": priority}]));
+            {
+              "summary": ("Order for " & (customerName) & " — " & (priority) & " priority (" & (($type(items) = "string" ? $length(items) : $count(items))) & " item(s))"),
+              "lineItems": $lineItems,
+              "total": $total,
+              "meta": $meta,
+              "discountPct": (
+                $__pi1 := $match(discountCode, /^\s*([-+]?)([0-9]+)/);
+                $exists($__pi1) ? ($__pi2 := $number($__pi1.groups[1]); $__pi1.groups[0] = "-" ? -$__pi2 : $__pi2)
+              )
+            }
+          )
+      output:
+        result:
+          summary: Order for Cleo — low priority (1 item(s))
+          lineItems:
+            - sku: CAKE-3
+              qty: 3
+              unitPrice: 0
+              label: red-velvet
+              lineTotal: 0
+          total: 5
+          meta:
+            channel: web
+            rush: false
+            priority: low
+    log-ticket:
+      input:
+        message: "Ticket: Order for Cleo — low priority (1 item(s))"
+  output:
+    customer: Cleo

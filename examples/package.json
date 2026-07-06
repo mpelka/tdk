@@ -1,0 +1,16 @@
+{
+  "name": "@tdk/examples",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tdk/core": "workspace:*",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}

@@ -1,0 +1,14 @@
+---
+"tdk-vscode": minor
+---
+
+Rework the TDK Trace panel into a two-slot debugger with validity-gated simulate and a normalized dry-run.
+
+The panel now retains TWO slots side by side, switched by a header segmented control: **Local simulate** (the live `execute()` trace) and **Backstage dry-run** (the last real dry-run). A completed dry-run fills its slot and auto-switches to it; the user can flip back anytime; both slots persist until replaced, and switching form previews replays both. A per-source latest-wins guard keeps a stale post from clobbering a fresher one, and the two sources never clobber each other.
+
+- **Not-reached rail state.** After a run halts at the first failed step, the downstream steps render with a distinct grey ○ glyph and a one-line "this step never ran" body (no input/output sections). The rail legend is now ran ✓ / skipped ⤼ / error ✗ / not reached ○. The first errored step stays auto-selected.
+- **Validity-gated live simulate.** An incomplete form (missing required fields) no longer triggers a garbage `execute()`. The webview validates the values against the full set of page schemas (respecting per-page required overrides) and reports validity; the extension runs the simulate only when valid. When invalid it shows a quiet "form incomplete — missing: …" placeholder (missing fields by their schema title), or — if a prior valid trace exists — keeps showing it under a slim banner. The moment the form validates, live updates resume. The explicit Dry-run button is unaffected.
+- **Trace source switcher with retained slots.** The panel no longer gets silently overwritten by whichever result arrived last, and always says which origin you are looking at. A plain-YAML preview shows the existing explanatory note on the Local tab; the dry-run tab works normally. An empty dry-run slot shows a friendly empty state.
+- **Dry-run normalization + endpoint header.** A successful dry-run is normalized into the SAME trace schema the local simulate renders — provenance pairing the compiled `${{ … }}` source against the values Backstage reports (recovered best-effort from the run-log JSON blobs; expression-only where a value can't be recovered), the same prettified expressions, plus the per-step log and emitted files as extra sections. All log lines are ANSI-stripped. The slot header reads `Backstage dry-run · <baseUrl> · <status> · <duration>` (a taxonomy label when unreachable).
+
+The dry-run adapter, ANSI stripping, resolved-input recovery, validity computation, and per-source sequencing are pure lib seams with unit tests (the adapter is tested against a captured real Backstage response, redacted to the bakery theme). The reworked panel is covered by React Testing Library tests; the old separate `DryRunView` is retired, its rendering subsumed into the unified trace detail.

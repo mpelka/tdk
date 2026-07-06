@@ -1,0 +1,56 @@
+present slot + named contact — no fallback:
+  steps:
+    fetch-baker:
+      input:
+        path: /api/bakery/assignment
+      output:
+        name: north-riverside-bakery
+    notify:
+      input:
+        slot: 9am-slot
+        recipient: BAKER SAM
+        banner: Delivery slot — urgency 4
+        tier: URGENT
+        region: north
+null slot + missing contact — both fall back:
+  steps:
+    fetch-baker:
+      input:
+        path: /api/bakery/assignment
+      output:
+        name: west-park-bakery
+    notify:
+      input:
+        slot: next-available
+        recipient: WEST-PARK-BAKERY
+        banner: Delivery slot — urgency 2
+        tier: standard
+        region: west
+absent slot — fallback (same as null):
+  steps:
+    fetch-baker:
+      input:
+        path: /api/bakery/assignment
+      output:
+        name: south-end-bakery
+    notify:
+      input:
+        slot: next-available
+        recipient: SOUTH-END-BAKERY
+        banner: Delivery slot — urgency 3
+        tier: URGENT
+        region: south
+empty-string slot — passes through (distinct from null):
+  steps:
+    fetch-baker:
+      input:
+        path: /api/bakery/assignment
+      output:
+        name: east-side-bakery
+    notify:
+      input:
+        slot: ""
+        recipient: EAST-SIDE-BAKERY
+        banner: Delivery slot — urgency 1
+        tier: standard
+        region: east
