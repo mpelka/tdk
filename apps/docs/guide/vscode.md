@@ -34,8 +34,7 @@ bunx @vscode/vsce package --no-dependencies   # in apps/vscode, produces tdk-vsc
 
 The `--no-dependencies` flag is required: vsce's dependency scan shells out to
 `npm list`, which fails on the Bun workspace layout, and the build already bundles
-everything into `dist/`. Add `--skip-license` to silence the LICENSE warning while
-the licence decision is pending.
+everything into `dist/`.
 
 They install it with `code --install-extension tdk-vscode-<version>.vsix` or through
 the Extensions view's Install from VSIX command. The `publisher` field in

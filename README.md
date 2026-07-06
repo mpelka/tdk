@@ -85,3 +85,7 @@ bun run --cwd apps/docs docs:dev
 - [VS Code extension](apps/docs/guide/vscode.md) — compile preview, form preview, the trace panel, and dry-run
 - [Stability](apps/docs/guide/stability.md) — the output-stability contract across upgrades
 - [Design decisions](apps/docs/guide/decisions.md) — why TDK is built the way it is
+
+## License
+
+TDK is licensed under the [Apache License 2.0](LICENSE).

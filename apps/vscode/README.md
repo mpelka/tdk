@@ -36,11 +36,10 @@ Then press F5 in VS Code to launch an Extension Development Host.
 <!-- TODO: `publisher: "tdk"` in package.json is a PLACEHOLDER — replace it with
      the real VS Code Marketplace / Open VSX publisher id before `vsce publish`.
      The `@tdk/vscode` package versions on its own marketplace track (via `vsce`),
-     independent of `@tdk/core`. A LICENSE is still pending with the maintainer. -->
+     independent of `@tdk/core`. -->
 
 Not yet published. The extension is `private` in `package.json`; publishing is tracked
 separately, in the TODO above. To build a shareable `.vsix` in the meantime, run
 `bunx @vscode/vsce package --no-dependencies` in this directory — the flag is required
 because vsce's dependency scan shells out to `npm list`, which fails on the Bun
-workspace layout, and the build already bundles everything into `dist/`. Add
-`--skip-license` to silence the LICENSE warning while the licence decision is pending.
+workspace layout, and the build already bundles everything into `dist/`.
