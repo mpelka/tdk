@@ -285,6 +285,19 @@ describe("report shaping + taxonomy", () => {
 });
 
 describe("429/5xx polite backoff", () => {
+  // An instant sleep (recording each requested delay) so the backoff tests do not wait
+  // out the real 250/500/1000ms delays — the DELAY SEQUENCE is asserted instead.
+  function instantSleep(): { sleep: (ms: number) => Promise<void>; delays: number[] } {
+    const delays: number[] = [];
+    return {
+      delays,
+      sleep: (ms) => {
+        delays.push(ms);
+        return Promise.resolve();
+      },
+    };
+  }
+
   test("retries a 503 then succeeds", async () => {
     const path = writeYaml("retry.yaml", CAKE_YAML);
     writeFileSync(colocatedValuesPath(path), JSON.stringify({ flavor: "vanilla" }), "utf8");
@@ -294,18 +307,22 @@ describe("429/5xx polite backoff", () => {
         ? { kind: "serverError", status: 503, message: "overloaded" }
         : { kind: "ok", body: { steps: [], log: [], output: {}, directoryContents: [] } },
     );
-    const report = await runDryRunSweep([path], opts({ client }));
+    const { sleep, delays } = instantSleep();
+    const report = await runDryRunSweep([path], opts({ client, sleep }));
     expect(report.ok).toBe(true);
     expect(client.calls.length).toBeGreaterThanOrEqual(3); // two 503s + the ok
+    expect(delays).toEqual([250, 500]); // one backoff per retried 503
   });
 
   test("gives up after the retry budget on a persistent 5xx", async () => {
     const path = writeYaml("retry2.yaml", CAKE_YAML);
     writeFileSync(colocatedValuesPath(path), JSON.stringify({ flavor: "vanilla" }), "utf8");
     const client = fakeClient({ kind: "serverError", status: 500, message: "always down" });
-    const report = await runDryRunSweep([path], opts({ client }));
+    const { sleep, delays } = instantSleep();
+    const report = await runDryRunSweep([path], opts({ client, sleep }));
     expect(report.ok).toBe(false);
     expect(report.templates[0]!.kind).toBe("serverError");
     expect(report.templates[0]!.status).toBe(500);
+    expect(delays).toEqual([250, 500, 1000]); // the full budget, then give up
   });
 });

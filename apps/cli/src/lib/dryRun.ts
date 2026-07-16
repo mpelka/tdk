@@ -54,6 +54,11 @@ export interface DryRunSweepOptions {
    * Injectable so unit tests drive the sweep with a fake client (no live Backstage).
    */
   client?: BackstageClient;
+  /**
+   * The sleep used between 429/5xx retries. Defaults to a real timer; injectable so the
+   * backoff unit tests run instantly instead of waiting out the real delays.
+   */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /** One template's line in the sweep report. */
@@ -357,16 +362,17 @@ const BACKOFF_BASE_MS = 250;
  * Dry-run ONE resolved artifact, with a polite sequential backoff on 429/5xx: on a
  * retryable result it waits (250ms, 500ms, 1000ms) and re-attempts, up to `MAX_RETRIES`,
  * so a rate-limited or briefly-overloaded backend is not reported as a hard failure on the
- * first blip. Any other outcome returns immediately.
+ * first blip. Any other outcome returns immediately. `sleepFn` is the (injectable) wait.
  */
 async function dryRunWithBackoff(
   client: BackstageClient,
   artifact: { object: object; yaml: string },
   values: Record<string, unknown>,
+  sleepFn: (ms: number) => Promise<void>,
 ): Promise<DryRunResult> {
   let result = await client.dryRun(artifact, { values });
   for (let attempt = 1; attempt <= MAX_RETRIES && isRetryable(result); attempt++) {
-    await sleep(BACKOFF_BASE_MS * 2 ** (attempt - 1));
+    await sleepFn(BACKOFF_BASE_MS * 2 ** (attempt - 1));
     result = await client.dryRun(artifact, { values });
   }
   return result;
@@ -401,7 +407,7 @@ async function runOne(path: string, opts: DryRunSweepOptions, client: BackstageC
   }
 
   const startedAt = Date.now();
-  const result = await dryRunWithBackoff(client, resolved.artifact, valuesResult.values);
+  const result = await dryRunWithBackoff(client, resolved.artifact, valuesResult.values, opts.sleep ?? sleep);
   const durationMs = Date.now() - startedAt;
 
   return {
