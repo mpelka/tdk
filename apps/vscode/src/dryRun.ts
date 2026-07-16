@@ -18,12 +18,12 @@
 // in `lib/` and are unit-tested there; this module is the thin VS Code adapter around
 // them, so it stays free of business logic that isn't about VS Code itself.
 
+import { dryRun, type FetchLike, type TemplateEntity } from "@tdk/core/backstage";
 import * as vscode from "vscode";
 import { parse as parseYaml } from "yaml";
 import { BACKSTAGE_BASE_URL_KEY, BACKSTAGE_TOKEN_KEY, backstageSetup } from "./lib/backstageConfig.ts";
 import { normalizeBaseUrl, validateBaseUrl } from "./lib/baseUrlInput.ts";
 import type { SourceStep } from "./lib/buildTrace.ts";
-import { dryRun, type FetchLike, type TemplateEntity } from "./lib/dryRunClient.ts";
 import { dryRunEndpoint, presentDryRun } from "./lib/dryRunPresentation.ts";
 import type { TraceViewProvider } from "./traceView.ts";
 import type { DryRunFile } from "./webview/protocol.ts";

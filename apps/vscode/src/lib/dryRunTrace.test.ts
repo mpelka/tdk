@@ -6,13 +6,13 @@
 // so the design is verified against reality, not a hand-rolled guess.
 
 import { describe, expect, test } from "bun:test";
+import type { DryRunSuccessBody } from "@tdk/core/backstage";
 import { dryRunParameters, dryRunResponse, dryRunSourceSteps } from "./__fixtures__/dryRunResponse.ts";
 import {
   skippedDryRunParameters,
   skippedDryRunResponse,
   skippedDryRunSourceSteps,
 } from "./__fixtures__/dryRunResponseSkipped.ts";
-import type { DryRunSuccessBody } from "./dryRunClient.ts";
 import { dryRunTraceSteps } from "./dryRunTrace.ts";
 
 describe("dryRunTraceSteps — against the captured real response", () => {

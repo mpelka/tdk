@@ -12,7 +12,7 @@
 // compiled `spec.steps[]` `${{ … }}` SOURCE, and the form values) — the two halves the
 // adapter pairs into provenance, exactly as the local trace path does.
 
-import type { DryRunSuccessBody } from "../dryRunClient.ts";
+import type { DryRunSuccessBody } from "@tdk/core/backstage";
 import response from "./dryRunResponse.bakery.json" with { type: "json" };
 
 /** The captured 200 body, typed as the client's success shape. */

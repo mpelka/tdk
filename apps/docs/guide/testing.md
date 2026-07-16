@@ -6,6 +6,29 @@ run (HTTP, provisioning and so on), it renders the compiled <code v-pre>${{ … 
 interpolations and runs the pure steps — the trace from input values, through the
 compiled YAML/JSONata/Nunjucks, to output.
 
+## The testing ladder
+
+TDK gives you four tiers of confidence, cheapest first. Each catches something the one
+before it cannot, so use them together — most templates want all four.
+
+1. Typecheck. A fixture's `parameters` are typed against the template's declared
+   params, so a renamed param or a wrong shape is a compile-time error before anything
+   runs. Run `bun run typecheck`.
+2. `execute()` snapshots. An offline simulation of one run, snapshot-asserted and
+   deterministic — no network. This is the default suite: fast, hermetic, run on every
+   change. See [scenarios and snapshots](#scenarios-and-snapshots).
+3. Contracts. The gold-standard oracle and the differential harnesses prove the
+   compiled template computes the same as a hand-written reference, per scenario. The
+   [stability contract](/guide/stability) pins what a version bump may and may not
+   change. See [executeAgainstGold and the oracle discipline](#executeagainstgold-and-the-oracle-discipline).
+4. Real dry-run. The template runs against a real Backstage, so you check the parts the
+   simulator does not cover: how the server validates the values, which steps run, and
+   what files the template emits. See [dry-run against Backstage](#dry-run-against-backstage).
+
+The first three run offline in `bun test` and `tdk test`. The fourth needs a Backstage
+to talk to, so it is opt-in — from VS Code, from the `tdk dry-run` command, or from the
+scriptable client.
+
 ## `execute(template, fixture, opts?)`
 
 For a `defineTemplate` template the fixture's `parameters` are typed against the
@@ -182,6 +205,75 @@ Emitted files show in a Files section. Select a path to open its content as a re
 document; an executable file carries a badge, and a template that writes nothing shows a
 quiet note. The [VS Code extension guide](/guide/vscode#dry-run-in-backstage) covers the
 trace panel, run history, and the failure outcomes in full.
+
+### Sweep from the command line
+
+`tdk dry-run <paths...>` runs the same dry-run headlessly over a sweep of templates, so
+CI can check that a batch still dry-runs green. It takes `.ts` and `.yaml` paths (or
+globs, mixed), sources each one's values, posts a dry-run, and prints a per-template
+report. It exits 1 if any template did not dry-run `ok`.
+
+```sh
+export TDK_BACKSTAGE_URL=http://localhost:7007
+export TDK_BACKSTAGE_TOKEN=…          # never a --token flag: it would leak into shell history
+tdk dry-run 'examples/*/template.ts' --json
+tdk dry-run cake-order.yaml --synthesize-values
+```
+
+The command reads its base URL and token from `TDK_BACKSTAGE_URL` and
+`TDK_BACKSTAGE_TOKEN`. Values come from a scenario fixture (`.ts`), a colocated
+`<basename>.values.json` (`.yaml`), an explicit `--values` file, or `--synthesize-values`
+— see the [CLI reference](/reference/cli#tdk-dry-run-paths) for the full priority, the
+synthesizer, and the report shape.
+
+### The scriptable client
+
+Both the extension and the CLI are built on one client, exported from the
+`@tdk/core/backstage` subpath. Reach for it directly when you want a dry-run from your
+own script or test — it takes the same `{ object, yaml }` artifact that `compile()` and
+`fromYaml()` produce.
+
+```ts
+import { compile } from "@tdk/core";
+import { backstageClient } from "@tdk/core/backstage";
+
+// baseUrl and token default to TDK_BACKSTAGE_URL / TDK_BACKSTAGE_TOKEN.
+const client = backstageClient({ baseUrl: "http://localhost:7007" });
+
+const artifact = compile(OrderCake, { env: "test", outDir: "" });
+const result = await client.dryRun(artifact, { values: { flavor: "vanilla" } });
+if (result.kind === "ok") {
+  console.log(result.body.steps.map((s) => s.id));   // the executed steps
+}
+```
+
+`dryRun` never throws for an HTTP outcome. It returns a discriminated result — `ok`,
+`validationFailed`, `authFailed`, `serverError`, or `unreachable` — so you branch on
+`result.kind`. The token is never logged, even if a proxy echoes it back.
+
+### Creating a real task, behind a consent gate
+
+The client can also create a real scaffolder task with `createTask`. Unlike a dry-run,
+this runs the template for real in Backstage, with real side effects. So it sits behind
+a consent gate: `createTask` throws synchronously unless you built the client with
+`allowTaskCreation: true`.
+
+```ts
+// Without the flag, this throws before any network call — a real run cannot happen by accident.
+backstageClient({ baseUrl }).createTask(artifact, { values });   // throws: consent required
+
+// With the flag, it POSTs to /api/scaffolder/v2/tasks and returns the new task.
+const client = backstageClient({ baseUrl, allowTaskCreation: true });
+const task = await client.createTask(artifact, { values: { flavor: "vanilla" } });
+if (task.kind === "created") {
+  console.log(task.taskId, task.taskUrl);   // the id and a link-able URL
+}
+```
+
+The task endpoint resolves the template from the catalog by name, so the template must
+already be registered there — `createTask` derives its `templateRef` from the artifact's
+`metadata.name`. The `tdk dry-run` command never calls `createTask`; only your own code
+can, and only after opting in.
 
 ## Typed fixtures and `validateParameters`
 

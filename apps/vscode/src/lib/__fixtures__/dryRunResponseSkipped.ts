@@ -21,7 +21,7 @@
 // non-theme tokens were the OpenTelemetry span/trace ids trailing each `info:` line,
 // scrubbed to fixed zeros (matching the sibling `dryRunResponse.ts` capture).
 
-import type { DryRunSuccessBody } from "../dryRunClient.ts";
+import type { DryRunSuccessBody } from "@tdk/core/backstage";
 import response from "./dryRunResponse.skipped.bakery.json" with { type: "json" };
 
 /** The captured 200 body (a run with a skipped `if:`-gated step), typed as the success shape. */

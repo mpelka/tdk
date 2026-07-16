@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { DryRunLogEntry, DryRunStep } from "./dryRunClient.ts";
+import type { DryRunLogEntry, DryRunStep } from "@tdk/core/backstage";
 import { groupLog } from "./logGrouping.ts";
 
 /** A step-scoped log entry. */

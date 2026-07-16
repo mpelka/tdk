@@ -105,6 +105,12 @@ export { defineAction, defineField } from "./extend.ts";
 // PAGE authored once and dropped into many templates. Concrete org-specific
 // fragments are built on top of it and live in the consumer's own shared code.
 export { fragment } from "./fragment.ts";
+export type { FromYamlResult } from "./fromYaml.ts";
+// Reading a plain-YAML Scaffolder template into the same `{ object, yaml }` artifact
+// `compile()` produces — so a hand-authored YAML template validates and dry-runs
+// exactly like a compiled TDK one. The `@tdk/core/backstage` subpath carries the
+// client that consumes either artifact.
+export { fromYaml } from "./fromYaml.ts";
 export type {
   Branch,
   BranchBody,

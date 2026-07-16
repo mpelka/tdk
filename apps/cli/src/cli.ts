@@ -18,6 +18,9 @@
 //                         --stdout prints instead of writing (still validates)
 //   tdk execute <file>    run the template's sibling __fixtures__/scenarios.ts
 //                         through execute() and print ONE JSON result object
+//   tdk dry-run <paths>   batch-dry-run templates (.ts + .yaml, globs ok) against a
+//                         live Backstage (TDK_BACKSTAGE_URL/_TOKEN) and report each
+//                         outcome; exits non-zero if any run isn't ok (--json report)
 //   tdk test [path]       run scenario SNAPSHOT tests (jest/vitest model).
 //                         --list only lists templates + scenarios (never runs).
 //   tdk init [dir]        scaffold a testable template + config + first snapshot
@@ -35,6 +38,13 @@
 import { relative } from "node:path";
 import { Command, CommanderError, InvalidArgumentError, Option } from "commander";
 import { buildConfig, buildStdout, compileTemplate, type Env, writeBuildJob } from "./lib/compile.ts";
+import {
+  type DryRunSweepOptions,
+  expandPaths,
+  formatDryRunReport,
+  runDryRunSweep,
+  serializeDryRunReport,
+} from "./lib/dryRun.ts";
 import { formatError } from "./lib/errors.ts";
 import {
   executeInlineFixture,
@@ -79,6 +89,15 @@ function pathValue(value: string): string {
     throw new InvalidArgumentError("requires a value (the argument looks like another flag).");
   }
   return value;
+}
+
+/** Parse a positive-integer option value (`--concurrency`, `--timeout`), rejecting junk. */
+function positiveIntValue(value: string): number {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new InvalidArgumentError("expects a positive integer.");
+  }
+  return n;
 }
 
 /**
@@ -224,6 +243,59 @@ function buildProgram(version: string): Command {
       });
       process.stdout.write(serializeExecuteReport(report));
     });
+
+  // tdk dry-run <paths...>
+  program
+    .command("dry-run")
+    .description("Batch dry-run templates (.ts and .yaml) against a live Backstage and report each outcome.")
+    .argument("<paths...>", "template paths or globs (.ts and .yaml, mixed) to dry-run")
+    .addOption(new Option("-e, --env <env>", "compile a .ts template for this env (any env name)").default("test"))
+    .option("--scenario <name>", "for a .ts template, use this scenario's fixture (default: the first scenario)")
+    .option("--values <file>", "an explicit JSON values file — wins over every other values source", pathValue)
+    .option("--synthesize-values", "derive minimal values from the schema when no other source has them")
+    .addOption(new Option("--concurrency <n>", "how many dry-runs run at once").default(4).argParser(positiveIntValue))
+    .addOption(new Option("--timeout <ms>", "per-request timeout in milliseconds").argParser(positiveIntValue))
+    .option(
+      "--base-url <url>",
+      "Backstage base URL (else TDK_BACKSTAGE_URL). The token comes from TDK_BACKSTAGE_TOKEN.",
+      pathValue,
+    )
+    .option("--json", "emit a machine-readable per-template report")
+    .action(
+      async (
+        paths: string[],
+        opts: {
+          env: Env;
+          scenario?: string;
+          values?: string;
+          synthesizeValues?: boolean;
+          concurrency: number;
+          timeout?: number;
+          baseUrl?: string;
+          json?: boolean;
+        },
+      ) => {
+        const files = await expandPaths(paths);
+        const sweepOpts: DryRunSweepOptions = {
+          env: opts.env,
+          scenario: opts.scenario,
+          valuesFile: opts.values,
+          synthesizeValues: Boolean(opts.synthesizeValues),
+          concurrency: opts.concurrency,
+          timeoutMs: opts.timeout,
+          baseUrl: opts.baseUrl,
+        };
+        const report = await runDryRunSweep(files, sweepOpts);
+        if (opts.json) {
+          process.stdout.write(serializeDryRunReport(report));
+        } else {
+          process.stdout.write(formatDryRunReport(report));
+        }
+        // Non-zero when ANY template did not dry-run ok (a pre-flight failure, a
+        // validation/auth/server error, or an unreachable backend).
+        if (!report.ok) process.exitCode = 1;
+      },
+    );
 
   // tdk test [path]
   program

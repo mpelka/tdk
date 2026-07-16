@@ -32,9 +32,9 @@
 // PURE + dependency-free (no `vscode`, no I/O): unit-tested against the captured real
 // response fixture.
 
+import type { DryRunSuccessBody } from "@tdk/core/backstage";
 import type { DryRunLogLine, TraceStep } from "../webview/protocol.ts";
 import type { SourceStep } from "./buildTrace.ts";
-import type { DryRunSuccessBody } from "./dryRunClient.ts";
 import { resolvedInputFromLog } from "./dryRunResolvedInput.ts";
 import { type GroupedStepStatus, groupLog } from "./logGrouping.ts";
 import { pairStepInputs } from "./traceProvenance.ts";
