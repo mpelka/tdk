@@ -18,7 +18,7 @@
 //   - `orphans`: log lines whose `stepId` matched no executed step (defensive — should
 //     be empty in practice, but never silently dropped).
 
-import type { DryRunLogEntry, DryRunStep } from "./dryRunClient.ts";
+import type { DryRunLogEntry, DryRunStep } from "@tdk/core/backstage";
 
 /** One log line, flattened to the fields the view renders. */
 export interface GroupedLogLine {

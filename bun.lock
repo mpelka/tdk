@@ -37,13 +37,14 @@
     },
     "apps/vscode": {
       "name": "tdk-vscode",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@fluentui/react-components": "^9.74.2",
         "@rjsf/core": "^5",
         "@rjsf/fluentui-rc": "^5",
         "@rjsf/utils": "^5",
         "@rjsf/validator-ajv8": "^5",
+        "@tdk/core": "workspace:*",
         "ajv": "8.20.0",
         "ajv-errors": "^3",
         "react": "^18",

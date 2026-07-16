@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import type { DryRunResult } from "@tdk/core/backstage";
 import type { DryRunEndpoint } from "../webview/protocol.ts";
 import type { SourceStep } from "./buildTrace.ts";
-import type { DryRunResult } from "./dryRunClient.ts";
 import { dryRunEndpoint, flattenValidationError, presentDryRun } from "./dryRunPresentation.ts";
 
 /** A fake base64 decode (identity-ish) so the test doesn't depend on a real codec. */

@@ -20,7 +20,7 @@
 //
 // PLAIN YAML TEMPLATES. The pipeline is source-agnostic after "compiled YAML", so a
 // plain YAML Scaffolder template (apiVersion scaffolder.backstage.io/…, kind:
-// Template — see lib/yamlTemplate.ts) previews too: the editor BUFFER is the
+// Template — detected by core's `fromYaml`) previews too: the editor BUFFER is the
 // artifact, no CLI compile, same debounce. The env selector, scenarios,
 // save-as-scenario, and the local execute trace are TDK-compile concepts and are
 // hidden/guarded for a `yaml` source (the webview shows a one-line note instead);
@@ -38,6 +38,7 @@
 
 import * as crypto from "node:crypto";
 import * as path from "node:path";
+import { fromYaml } from "@tdk/core";
 import * as vscode from "vscode";
 import { parse as parseYaml } from "yaml";
 import { runDryRun } from "./dryRun.ts";
@@ -55,7 +56,6 @@ import {
 import { insertScenario } from "./lib/insertScenario.ts";
 import { toFormPages } from "./lib/pages.ts";
 import { createSourceSeqGuard, type SourceSeqGuard } from "./lib/sourceSeqGuard.ts";
-import { detectYamlTemplate } from "./lib/yamlTemplate.ts";
 import type { TraceViewProvider } from "./traceView.ts";
 import type {
   ExtensionToTraceView,
@@ -489,7 +489,7 @@ async function resolveSourceDocument(templatePath?: string): Promise<ResolvedSou
   // otherwise the same message a non-template editor gets (never "open a .ts template"
   // for a valid YAML template).
   if (isYamlFile(document)) {
-    const detected = detectYamlTemplate(document.getText());
+    const detected = fromYaml(document.getText());
     if (detected.kind === "notTemplate") {
       vscode.window.showErrorMessage(
         "TDK: this YAML is not a Scaffolder template (needs apiVersion scaffolder.backstage.io/… and kind: Template).",
@@ -584,7 +584,7 @@ async function compileAndPost(preview: FormPreview, source?: vscode.TextDocument
   // shape the TS compile errors use), and an edit that removed `apiVersion`/`kind`
   // reads as "no longer a Scaffolder template", not a cryptic missing-form.
   if (preview.source === "yaml") {
-    const detected = detectYamlTemplate(stdout);
+    const detected = fromYaml(stdout);
     if (detected.kind === "parseError") {
       const where = detected.line !== undefined ? `${preview.sourcePath}:${detected.line}: ` : "";
       post(preview, { type: "compileError", message: `${where}${detected.message}` });
@@ -598,9 +598,17 @@ async function compileAndPost(preview: FormPreview, source?: vscode.TextDocument
       });
       return;
     }
-    const pages = toFormPages(detected.parameters);
-    preview.sourceSteps = normalizeSourceSteps(detected.steps);
-    preview.title = detected.title ?? detected.name ?? path.basename(preview.sourcePath);
+    // `fromYaml` hands back the parsed entity as `object`; the form fields come from the
+    // same `spec.parameters` / `metadata` the TDK path reads (below), just without a
+    // compile step — the YAML buffer IS the artifact. Read defensively: the gate only
+    // guaranteed apiVersion + kind, not a well-formed spec.
+    const entity = detected.object as {
+      metadata?: { name?: string; title?: string };
+      spec?: { parameters?: unknown; steps?: unknown };
+    };
+    const pages = toFormPages(entity.spec?.parameters);
+    preview.sourceSteps = normalizeSourceSteps(entity.spec?.steps);
+    preview.title = entity.metadata?.title ?? entity.metadata?.name ?? path.basename(preview.sourcePath);
     const message: TemplateMessage = {
       type: "template",
       templateId: preview.sourcePath,
@@ -1015,7 +1023,7 @@ async function submitDryRun(
     context,
     { title: preview.title, values, sourceSteps: preview.sourceSteps, compile: () => compileYaml(preview) },
     traceView,
-    fetch as unknown as import("./lib/dryRunClient.ts").FetchLike,
+    fetch as unknown as import("@tdk/core/backstage").FetchLike,
     emit,
   );
 }

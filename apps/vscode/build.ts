@@ -41,16 +41,28 @@ const common = {
   throw: false,
 } as const;
 
-/** The extension-host bundle: Node + CJS, with `vscode` left external. */
-function buildExtension(): Promise<Bun.BuildOutput> {
-  return Bun.build({
+/**
+ * The extension-host bundle's Bun.build config: Node + CJS, with `vscode` left external.
+ * Exported as a factory (taking the outdir) — like `webviewBuildConfig` — so the bundle
+ * smoke test builds the EXACT production host bundle into a scratch dir while `build.ts`
+ * builds it into `dist`. This is where the `@tdk/core` / `@tdk/core/backstage` import seam
+ * gets exercised through the production bundler: neither is external, so both are inlined,
+ * and a resolution/interop bug in the subpath export map surfaces here as a build failure.
+ */
+export function extensionBuildConfig(outdir: string): Bun.BuildConfig {
+  return {
     ...common,
     entrypoints: [path.join(src, "extension.ts")],
-    outdir: path.join(root, "dist"),
+    outdir,
     target: "node",
     format: "cjs",
     external: ["vscode"],
-  });
+  };
+}
+
+/** The extension-host bundle: Node + CJS, with `vscode` left external. */
+function buildExtension(): Promise<Bun.BuildOutput> {
+  return Bun.build(extensionBuildConfig(path.join(root, "dist")));
 }
 
 // The webview's peer packages, all declared as DIRECT deps of this package so they

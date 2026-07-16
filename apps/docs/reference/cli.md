@@ -21,6 +21,8 @@ Commands:
                                  disk.
   execute [options] <template>  Run the template's scenarios through execute()
                                  and print ONE JSON result object.
+  dry-run [options] <paths...>  Batch dry-run templates (.ts and .yaml) against a
+                                 live Backstage and report each outcome.
   test [options] [path]         Run scenario SNAPSHOT tests (jest/vitest model).
   init [dir]                    Scaffold a testable template + config + first
                                  snapshot into [dir] (default .).
@@ -178,6 +180,103 @@ required). The report is a single run's outcome: `{ ok: true, result }`, or
 values here to render its per-step trace pane.
 
 `execute` is the single-file scenario playground the VS Code extension shells out to.
+
+## `tdk dry-run <paths...>`
+
+Dry-run a sweep of templates against a live Backstage and report each outcome. It is
+the batch, headless counterpart to the VS Code dry-run: point it at a set of paths
+(or globs, mixed `.ts` and `.yaml`) and it compiles or reads each one, sources its
+values, posts a dry-run to Backstage, and prints a per-template report. It only ever
+dry-runs — it never creates a task — so it is safe to run in CI.
+
+```
+Arguments:
+  paths                template paths or globs (.ts and .yaml, mixed) to dry-run
+
+Options:
+  -e, --env <env>      compile a .ts template for this env (any env name) (default: "test")
+  --scenario <name>    for a .ts template, use this scenario's fixture (default: the first scenario)
+  --values <file>      an explicit JSON values file — wins over every other values source
+  --synthesize-values  derive minimal values from the schema when no other source has them
+  --concurrency <n>    how many dry-runs run at once (default: 4)
+  --timeout <ms>       per-request timeout in milliseconds
+  --base-url <url>     Backstage base URL (else TDK_BACKSTAGE_URL). The token comes from TDK_BACKSTAGE_TOKEN.
+  --json               emit a machine-readable per-template report
+  -h, --help           display help for command
+```
+
+### Configuration
+
+The base URL comes from `--base-url`, or the `TDK_BACKSTAGE_URL` environment variable
+when the flag is absent. The token comes only from `TDK_BACKSTAGE_TOKEN` — there is no
+`--token` flag, because a token in `argv` would leak into your shell history and
+process list. A request with no resolvable base URL fails loudly, naming both sources.
+
+### Values sources
+
+Every dry-run needs parameter values. Where they come from depends on the file type,
+and follows a fixed priority.
+
+For a `.ts` template:
+
+1. `--values <file>`, an explicit JSON file, if given.
+2. the scenario fixture — `--scenario <name>`, or the first scenario when the
+   template has a sibling `__fixtures__/scenarios.ts`.
+3. `--synthesize-values`, if given.
+
+For a `.yaml` template:
+
+1. `--values <file>`, an explicit JSON file, if given.
+2. a colocated `<basename>.values.json` sibling — for `cake-order.yaml`, the file
+   `cake-order.values.json` in the same directory.
+3. `--synthesize-values`, if given.
+
+When no source applies, that template reports a `valuesError` and never contacts
+Backstage. An explicit `--values` file always wins.
+
+### Synthesized values
+
+`--synthesize-values` derives a minimal payload from the template's own
+`spec.parameters` schema, for the required fields only. Each required field takes its
+property `default`, then the first `enum` member, then a type-appropriate placeholder
+(`"example"` for a string, `1` for a number, `false` for a boolean, `[]` for an
+array). Optional fields are left out.
+
+The synthesizer is deliberately small and honest. It bails — reporting a `valuesError`
+that names the fields — on a schema it cannot satisfy without inventing structure: a
+required object with no default, or a typeless required field. Every synthesized run
+is flagged in the report, so a placeholder pass is never mistaken for a real one.
+
+### Concurrency and backoff
+
+`--concurrency <n>` (default 4) caps how many dry-runs run at once. Within that cap,
+a dry-run that returns a 429 or a 5xx is retried up to 3 times with a growing backoff
+(250ms, 500ms, 1000ms), so a rate-limited or briefly overloaded backend is not
+reported as a hard failure on the first blip.
+
+### Report and exit code
+
+The default output is one status line per template — its outcome, values source, a
+synthesized flag, the duration, and any error message — then a summary count.
+`--json` emits a machine-readable report instead:
+
+```json
+{
+  "ok": false,
+  "templates": [
+    { "path": "…/cake-order.yaml", "source": "yaml", "kind": "ok",
+      "ok": true, "valuesSource": "colocated", "synthesized": false, "durationMs": 57 }
+  ]
+}
+```
+
+Each template's `kind` is either a pre-flight failure that never reached Backstage
+(`notTemplate`, `parseError`, `loadError`, `compileError`, `valuesError`) or a dry-run
+outcome (`ok`, `validationFailed`, `authFailed`, `serverError`, `unreachable`). The
+sweep exits 1 if any template did not dry-run `ok`, so CI fails on the first drift.
+
+See [Dry-run against Backstage](/guide/testing#dry-run-against-backstage) for the
+scriptable client the command is built on, and the consent-gated `createTask`.
 
 ## `tdk test [path]`
 

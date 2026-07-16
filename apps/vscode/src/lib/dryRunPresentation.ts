@@ -14,6 +14,7 @@
 // Every outcome carries the `endpoint` header (baseUrl · status · duration) — the slot
 // always says where it came from and how the request fared.
 
+import type { DryRunResult, DryRunValidationError } from "@tdk/core/backstage";
 import type {
   DryRunEndpoint,
   DryRunFile,
@@ -23,7 +24,6 @@ import type {
 } from "../webview/protocol.ts";
 import { stripAnsi } from "./ansi.ts";
 import type { SourceStep } from "./buildTrace.ts";
-import type { DryRunResult, DryRunValidationError } from "./dryRunClient.ts";
 import { denoiseLogLine } from "./dryRunLogDenoise.ts";
 import { dryRunTraceSteps } from "./dryRunTrace.ts";
 
