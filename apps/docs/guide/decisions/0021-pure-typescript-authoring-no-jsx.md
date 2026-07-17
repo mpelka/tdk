@@ -64,6 +64,9 @@ the toolchain. The reasoning:
 5. Semantic honesty. `defineTemplate({ parameters: [...] })` reads as data, which it is —
    a spec compiled to YAML. `<Template>` implies a component with render and runtime
    semantics that do not exist.
+6. The composition win JSX is loved for, TDK already has. Fragments are page-components:
+   a `bakingJustificationPage()`-style helper is component-style reuse, as a value, with
+   no JSX needed.
 
 Rendering the compiled JSON Schema in a live form preview through RJSF is genuinely
 React. That renders the output, not the authoring surface, and this decision does not

@@ -54,7 +54,8 @@ The reasoning:
    `params = {}` block divorced from page structure.
 3. No `this`, `new` or binding hazards. A `defineTemplate(...)` is a value you
    `export default`; there is no construction lifecycle and no subclass contract to
-   satisfy.
+   satisfy. Composition stays uniform and FP-friendly — fragments are functions returning
+   pages; resolvers and fields are values.
 4. A template is data, not behaviour. A value reads as data; a class implies methods,
    lifecycle and identity that a spec does not have. This is the same semantic-honesty
    argument that [ADR 21](/guide/decisions/0021-pure-typescript-authoring-no-jsx) makes

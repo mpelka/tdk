@@ -51,7 +51,9 @@ static-params hook bakes options into a build. The reasoning:
    Resolving `load()` at compile time produces real, static options per env and avoids any
    runtime dependency in the emitted template.
 3. env-aware because the data is env-specific. `load({ env })` lets the test artifact get
-   test-catalog options and the prod artifact get prod ones.
+   test-catalog options and the prod artifact get prod ones. The shape pairs with
+   `env.pick` and feeds the same env-safety scan that guards against prod-only values
+   leaking into a test artifact.
 4. Two tiers, no new primitive. A unit or snapshot test injects `loaded` directly — fast,
    deterministic, no network. An integration-flavoured test fakes HTTP with MSW so the
    actual `load` code runs. A bespoke `mock()` primitive would be a redundant third way
@@ -65,6 +67,8 @@ static-params hook bakes options into a build. The reasoning:
   and couples core to one mock model.
 - Runtime data fetching, where Backstage fetches options live — rejected. Not TDK's job,
   env-fragile, and outside the compile-time model.
+- A non-memoized loader — rejected. It refetches per target, orders nondeterministically,
+  and runs slower.
 
 ## Consequences
 

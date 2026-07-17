@@ -26,6 +26,10 @@ for the fixture and theme vocabulary; it must never be renamed.
 - synth, for cdk8s parity — rejected. It reads as a cdk8s term of art that has to be
   explained, and it sits one letter away from synthetic, which invites misreads and
   trips up any scan for the push-safety vocabulary.
+- render — rejected. Overloaded: RJSF renders a form and Nunjucks renders a string, and
+  the word implies producing final UI rather than an intermediate artifact.
+- build — rejected. Already taken by `tdk build` and by the internal `Template.build()`,
+  which returns the step list, and overloaded with bundler build.
 
 ## Consequences
 

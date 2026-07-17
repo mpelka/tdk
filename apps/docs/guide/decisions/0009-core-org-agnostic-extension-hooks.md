@@ -24,6 +24,9 @@ types; an organisation's field and action pack lives in that organisation's own 
 
 ## Consequences
 
+- Push-safety becomes structural, not vigilance-based. If core imports no concrete
+  org-specific thing, core cannot leak one — the architectural boundary and the leak
+  boundary are the same line.
 - Keeping the plugin seam one-directional lets each organisation's pack evolve on its
   own cadence while TDK stays org-agnostic.
 - The only org-shaped thing that stays in core is a synthetic exemplar,
