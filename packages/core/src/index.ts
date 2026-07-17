@@ -156,6 +156,11 @@ export { defineConfig } from "./targets.ts";
 export type { BuiltForm, InputValue, Lifecycle, LoadContext, PrepareOptions, Step } from "./template.ts";
 // Core authoring model.
 export { Template } from "./template.ts";
+// Typed step-input values (authoring-v2 enabler, issue #15). `TypedInputValue<V>`
+// is the result-type-constraining sibling of `InputValue`; `MarkerValue<M>` is
+// its extraction dual (what `derive` reads to infer its lambda context). Both are
+// type-only — a purely additive surface; the loose `InputValue` is unchanged.
+export type { MarkerValue, TypedInputValue, TypedMarker, UntypedInputMarker } from "./typed-input.ts";
 export type { ValidationResult } from "./validate.ts";
 // Validation.
 export {

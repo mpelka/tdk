@@ -72,7 +72,11 @@ functional form is the supported authoring surface.
 Builds one `Step`. `opts` is `{ input?, name?, if? }`:
 
 - `input?: Record<string, InputValue>` — values may be `f.<param>` refs, `env.pick`,
-  `raw`/`jsonata`/`nj` expressions, or literals.
+  `raw`/`jsonata`/`nj` expressions, or literals. `InputValue` is the loose form: a
+  marker's result type is not checked against its slot. Core also exports the typed
+  sibling `TypedInputValue<V>` (and its extraction dual `MarkerValue<M>`) — the enabler
+  a later phase wires into typed step inputs so a marker rendering the wrong type
+  squiggles; see [ADR-0025](/guide/decisions/0025-authoring-v2-dataflow-model).
 - `name?: string` — the human-readable step name.
 - `if?` — a templated run condition; accepts a `string | boolean | RawRef | jsonata`/
   `nj` expression `| Resolvable` (a resolver marker).
