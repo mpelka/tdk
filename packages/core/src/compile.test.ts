@@ -8,6 +8,7 @@ import {
   compile,
   compileAll,
   env,
+  nj,
   p,
   page,
   raw,
@@ -654,6 +655,95 @@ describe("step + value resolution", () => {
     }
     const { object } = compile(new BoolIf(), nonprod);
     expect(object.spec.steps[0]!.if).toBe(false);
+  });
+});
+
+// Issue #9: `resolveValue` used to return an `env.pick`'s branch verbatim, so a
+// branch OBJECT containing markers (raw/nj()/jsonata()/param refs) aborted
+// compilation with an unrendered-marker error. The fix routes the picked branch
+// back through `resolveValue` itself.
+describe("env.pick branch resolution (issue #9)", () => {
+  class PerEnvOrder extends Template {
+    id = "per-env-order";
+    title = "Per-env order";
+    type = "service";
+    params = { customerName: p.string({ required: true }) };
+    build() {
+      return [
+        {
+          id: "place-order",
+          action: "debug:log",
+          input: {
+            // The exact reproduction from the issue: per-env payloads where
+            // prod's fulfilment service takes an extra field.
+            order: env.pick({
+              test: {
+                customer: this.params.customerName.ref,
+                notes: nj((c) => `Rush: ${c.parameters.rush}`),
+              },
+              prod: {
+                customer: this.params.customerName.ref,
+                notes: nj((c) => `Rush: ${c.parameters.rush}`),
+                costCentre: "CC-1",
+              },
+            }),
+          },
+        },
+      ];
+    }
+  }
+
+  test("a branch OBJECT containing nj() and a param ref renders its markers, per env", () => {
+    const testOrder = compile(new PerEnvOrder(), nonprod).object.spec.steps[0]!.input!.order;
+    expect(testOrder).toEqual({
+      customer: "${{ parameters.customerName }}",
+      notes: '${{ ("Rush: " ~ (parameters.rush)) }}',
+    });
+
+    const prodOrder = compile(new PerEnvOrder(), prod).object.spec.steps[0]!.input!.order;
+    expect(prodOrder).toEqual({
+      customer: "${{ parameters.customerName }}",
+      notes: '${{ ("Rush: " ~ (parameters.rush)) }}',
+      costCentre: "CC-1",
+    });
+  });
+
+  test("a scalar branch still resolves unchanged (no regression)", () => {
+    expect(compile(new OvenTemplate(), nonprod).object.spec.steps[0]!.input!.cluster).toBe("test-cluster");
+  });
+
+  test("an env.pick NESTED inside a branch resolves recursively, against the same target env", () => {
+    // Deliberate semantics (documented alongside the fix in compile.ts): a
+    // picked branch flows back through `resolveValue` like any other value, so
+    // a branch that is itself another `env.pick` resolves too — recursively,
+    // against the SAME target env the outer pick was resolved for. This lets a
+    // branch be composed from a smaller/shared sub-pick instead of forcing an
+    // author to flatten it by hand. (The alternative — rejecting a nested pick
+    // outright — would special-case env.pick relative to every other value
+    // resolveValue recurses into; recursing keeps the rule uniform: "a picked
+    // branch resolves exactly like any other authored value".)
+    class NestedPick extends Template {
+      id = "nested-pick";
+      title = "Nested Pick";
+      type = "service";
+      params = {};
+      build() {
+        return [
+          {
+            id: "s",
+            action: "debug:log",
+            input: {
+              region: env.pick({
+                test: env.pick({ test: "t-inner", prod: "p-inner" }),
+                prod: "p-outer",
+              }),
+            },
+          },
+        ];
+      }
+    }
+    expect(compile(new NestedPick(), nonprod).object.spec.steps[0]!.input!.region).toBe("t-inner");
+    expect(compile(new NestedPick(), prod).object.spec.steps[0]!.input!.region).toBe("p-outer");
   });
 });
 

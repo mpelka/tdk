@@ -314,7 +314,17 @@ function resolveValue(value: unknown, resolver: CompileResolver, where = "value"
   if (isResolvable(value)) {
     return lookupResolved(value, resolver.env, resolver.resolved);
   }
-  if (isEnvPick(value)) return value.resolve(resolver.env);
+  // The picked branch flows back through `resolveValue` itself (not returned
+  // verbatim) so a branch OBJECT/ARRAY containing markers (raw/nj()/jsonata()/
+  // param refs) renders exactly like any other input subtree — an env.pick is
+  // just a values-differ-per-env wrapper, not an escape from resolution.
+  // A branch that is itself another env.pick recurses through this same `if`
+  // on the next call and resolves too (deliberate: a picked branch is "any
+  // other value" per the doc comment above, and nesting picks per env is a
+  // reasonable authoring pattern) — resolved against the SAME target env, so
+  // it can only narrow/rename the outer pick's branches, never re-branch on a
+  // different axis.
+  if (isEnvPick(value)) return resolveValue(value.resolve(resolver.env), resolver, where);
   if (isRawExpr(value)) return value.render(resolver);
   if (isRawRef(value)) return value.render(resolver);
   if (Array.isArray(value)) {
