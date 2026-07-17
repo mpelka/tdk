@@ -386,7 +386,17 @@ function buildShowWhenDependencies(propsMap: ParamMap, conditional: ConditionalF
     if (existing) return existing;
     const ctrlParam = propsMap[controller];
     if (!(ctrlParam instanceof ParamBase)) {
-      throw new Error(`showWhen references controller "${controller}", which is not a property on this page.`);
+      // Deliberate semantics: a reveal condition may only key off a field on the
+      // SAME page. Each wizard page compiles to its OWN JSON-Schema object, and a
+      // `dependencies` node can only reference a sibling property of that object —
+      // the wire has no cross-page dependency. So a controller that is bound on
+      // ANOTHER page (or nowhere) is rejected here rather than emitted as a
+      // dangling dependency the form would ignore.
+      throw new Error(
+        `showWhen references controller "${controller}", which is not a property on this page. A ` +
+          `dependency can only key off a field declared on the SAME page (each wizard page is its own ` +
+          `object schema) — declare the controller on this page, or move both fields onto one page.`,
+      );
     }
     const values = ctrlParam.valueSet();
     if (!values) {

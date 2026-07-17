@@ -14,6 +14,9 @@
 //     trees compile independently.
 //   - `rawDependencies` (page 2) — a verbatim JSON-Schema passthrough on `rush`,
 //     emitted next to the compiled dep.when tree untouched (invariant c).
+//   - the COMPOSED form (page 4) — the SAME synthesis authored ADR-0025's way: the
+//     `.showWhen(...)` METHOD, an `all(...)` AND-chain that auto-nests, an `any(...)`
+//     same-field OR, and the `.in([...])` array form. No hand-written `dep.*`.
 //
 // Page 3 reuses a shared "Baker Notes" page FRAGMENT (authored once, imported here).
 //
@@ -25,7 +28,7 @@
 // The gold-standard.yaml is the hand-authored oracle; template.test.ts asserts the
 // compiled entity agrees with it value-for-value.
 
-import { all, defineTemplate, dep, nj, p, page, step } from "@tdk/core";
+import { all, any, defineTemplate, dep, nj, p, page, step } from "@tdk/core";
 import { bakerNotesPage } from "./fragments.ts";
 
 // Page-1 CONTROLLERS hoisted to consts so the conditional fields can name them with
@@ -46,6 +49,26 @@ const topper = p.boolean({ title: "Add a cake topper?", showWhen: orderType.is("
 const packaging = p.enum(["box", "ribbon"], { title: "Packaging" });
 const ribbonColor = p.string({ title: "Ribbon colour" });
 const rush = p.boolean({ title: "Rush order?" });
+
+// Page-4 CONTROLLERS + composed-form conditional fields — the SAME synthesis as
+// page 1, but authored with ADR-0025 Decision 1's surface: the `.showWhen(...)`
+// METHOD (not the option), the `any(...)` same-field OR, and the `.in([...])`
+// array form. Two INDEPENDENT discriminators live on one page:
+//   - `deliveryMethod` reveals `courierSpeed` for a courier; `insurance` is
+//     revealed by an `all(...)` AND-chain (courier AND express), so it AUTO-NESTS
+//     inside `courierSpeed`'s express branch — a two-level chain like page 1's.
+//   - `contactPref` reveals `mobile` via `any(...)` (an OR over sms/call, i.e.
+//     `contactPref.in(["sms", "call"])`) and `notifyEmail` via `.in([...])`. Both
+//     name the SAME controller, so they GROUP into one dependency with a field
+//     per matching branch.
+const deliveryMethod = p.enum(["collection", "courier"], { title: "Delivery method" });
+const courierSpeed = p.enum(["standard", "express"], { title: "Courier speed" }).showWhen(deliveryMethod.is("courier"));
+const insurance = p
+  .boolean({ title: "Insure the delivery?" })
+  .showWhen(all(deliveryMethod.is("courier"), courierSpeed.is("express")));
+const contactPref = p.enum(["sms", "email", "call"], { title: "Contact preference" });
+const mobile = p.string({ title: "Mobile number" }).showWhen(any(contactPref.is("sms"), contactPref.is("call")));
+const notifyEmail = p.string({ title: "Notification email" }).showWhen(contactPref.in(["email", "sms"]));
 
 export const CustomCakeOrderWizard = defineTemplate({
   id: "custom-cake-order-wizard",
@@ -101,6 +124,20 @@ export const CustomCakeOrderWizard = defineTemplate({
 
     // --- Page 3: the shared fragment, used verbatim ---
     bakerNotesPage(),
+
+    // --- Page 4: the COMPOSED form — same synthesis, authored the v2 way ---
+    // Every conditional field here uses the `.showWhen(...)` METHOD; the two
+    // discriminators compile to two independent dependency trees (like page 2's),
+    // and `mobile`/`notifyEmail` group under `contactPref` (like page 1's chain
+    // groups under `orderType`). No `dep.*` in sight — the compiler synthesises it.
+    page("Delivery", {
+      deliveryMethod,
+      courierSpeed,
+      insurance,
+      contactPref,
+      mobile,
+      notifyEmail,
+    }),
   ],
   steps: () => [
     step("log-order", "debug:log", {

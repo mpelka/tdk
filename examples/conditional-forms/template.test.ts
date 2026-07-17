@@ -20,9 +20,9 @@ describe("custom-cake-order-wizard — structure", () => {
   const { object } = compile(CustomCakeOrderWizard, nonprod);
   const pages = object.spec.parameters as PageObject[];
 
-  test("compiles to a 3-page wizard with the expected page titles", () => {
+  test("compiles to a 4-page wizard with the expected page titles", () => {
     expect(object.metadata.name).toBe("custom-cake-order-wizard");
-    expect(pages.map((p) => p.title)).toEqual(["Order Type", "Packaging & Speed", "Baker Notes"]);
+    expect(pages.map((p) => p.title)).toEqual(["Order Type", "Packaging & Speed", "Baker Notes", "Delivery"]);
   });
 
   test("invariant (a): the wedding branch nests topper → topperText INSIDE it (not flattened)", () => {
@@ -59,6 +59,43 @@ describe("custom-cake-order-wizard — structure", () => {
     };
     const rushOn = rush.oneOf[1]!.properties!;
     expect(rushOn.rushJustification).toEqual({ type: "string", title: "Why is this order urgent?" });
+  });
+
+  test("page 4 (composed form): the `.showWhen(...)` method synthesises the SAME tree shape", () => {
+    // Authored with NO dep.*, page 4 must compile to two independent dependency
+    // trees — the composed surface is pure sugar over the same synthesiser.
+    const page4 = pages[3]!;
+    expect(Object.keys(page4.dependencies ?? {}).sort()).toEqual(["contactPref", "deliveryMethod"]);
+
+    // The all(...) AND-chain nests: courier branch → courierSpeed dep → express
+    // branch reveals `insurance` (two levels deep, like page 1's topper chain).
+    const delivery = page4.dependencies!.deliveryMethod as { oneOf: Array<Record<string, unknown>> };
+    const courier = delivery.oneOf.find(
+      (b) =>
+        ((b.properties as Record<string, { const?: unknown }>).deliveryMethod as { const?: unknown }).const ===
+        "courier",
+    ) as { properties: Record<string, unknown>; dependencies?: Record<string, unknown> };
+    expect(courier.properties).toHaveProperty("courierSpeed");
+    const speed = courier.dependencies!.courierSpeed as { oneOf: Array<Record<string, unknown>> };
+    const express = speed.oneOf.find(
+      (b) =>
+        ((b.properties as Record<string, { const?: unknown }>).courierSpeed as { const?: unknown }).const === "express",
+    ) as { properties: Record<string, unknown> };
+    expect(express.properties).toHaveProperty("insurance");
+
+    // any(...) and .in([...]) both key off `contactPref`, so they GROUP: `mobile`
+    // appears in the sms + call branches, `notifyEmail` in the email + sms branches.
+    const contact = page4.dependencies!.contactPref as { oneOf: Array<Record<string, unknown>> };
+    const byValue = (v: string) =>
+      contact.oneOf.find(
+        (b) => ((b.properties as Record<string, { const?: unknown }>).contactPref as { const?: unknown }).const === v,
+      )!.properties as Record<string, unknown>;
+    expect(byValue("sms")).toHaveProperty("mobile");
+    expect(byValue("sms")).toHaveProperty("notifyEmail");
+    expect(byValue("email")).toHaveProperty("notifyEmail");
+    expect(byValue("email")).not.toHaveProperty("mobile");
+    expect(byValue("call")).toHaveProperty("mobile");
+    expect(byValue("call")).not.toHaveProperty("notifyEmail");
   });
 
   test("the single step is the debug:log order logger", () => {
