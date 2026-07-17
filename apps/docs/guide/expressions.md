@@ -97,7 +97,7 @@ block-bodied arrow and emits a JSONata block `( … ; … ; <final> )`:
 | --- | --- | --- |
 | `const x = <e>;` / `let x = <e>;` | `$x := <e>` | binding |
 | `x = <e>;` | `$x := <e>` | reassignment (JSONata rebinds) |
-| `assert(cond, msg);` | `$assert(cond, msg)` | bare guard statement |
+| `assert(cond, msg);` / `require(cond, msg);` | `$assert(cond, msg)` | bare guard statement |
 | `return <e>;` | `<e>` | must be the final statement |
 | reference to a bound `x` | `$x` | bound names become JSONata variables |
 
@@ -114,6 +114,8 @@ const pricing = jsonata<{ customerName: string; rushOrder: string }>((c) => {
 
 `assert` is the author-facing mirror of `$assert`: it throws `Error(msg)` when
 `cond` is false, so a failing guard runs on both sides of a differential.
+`require` is an alias, read as a sentence ("require the customer name, or fail")
+— it compiles and behaves identically; see [Author a template](/guide/authoring#require-cond-msg-the-guard-clause-spelling).
 
 ### The JSONata escape hatch
 

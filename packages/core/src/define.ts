@@ -31,10 +31,11 @@
 //     steps:  (f) => [step("place", "bakery:place", { input: { name: f.cakeName } })],
 //   });
 
+import type { NjContext, NunjucksExpr } from "./expr/nunjucks/index.ts";
 import type { ColocatedPage, PageInput } from "./pages.ts";
 import { bindPageNames } from "./pages.ts";
-import type { ParamBase, ParamMap, ParamRef } from "./params.ts";
-import { requireParam } from "./params.ts";
+import type { ParamBase, ParamMap, ParamRef, ShowWhenCondition } from "./params.ts";
+import { compileWhenExpr, requireParam } from "./params.ts";
 import type { BuiltForm, InputValue, Lifecycle, LoadContext, PrepareOptions, Step } from "./template.ts";
 import { Template } from "./template.ts";
 
@@ -60,6 +61,22 @@ export interface Ref<T> extends ParamRef {
    * a genuinely typed `Ref<T>` carries a result type downstream.
    */
   readonly __tdkRefType: T;
+
+  /**
+   * Sugar for the Nunjucks `default` filter (ADR-0025 §5): `f.worklog.orElse("")`
+   * emits `${{ parameters.worklog | default("") }}`. On a `Ref<T | undefined>`
+   * (a conditional field) the default resolves the absence, so the returned
+   * marker types as the non-`undefined` `T` — usable anywhere a
+   * `TypedInputValue<T>` slot is required (`NunjucksExpr` is one of
+   * `TypedMarker`'s four kinds; see typed-input.ts). On a plain `Ref<T>` (no
+   * `undefined` in `T`) it is allowed but pointless: the default can never
+   * fire, since `Exclude<T, undefined>` is just `T` again.
+   *
+   * The runtime method is `ParamRef.orElse` (params.ts) — every `Ref` IS a
+   * cast `ParamRef` (see `bindParameters` below), so this signature only
+   * narrows the TYPE the same instance's real method already implements.
+   */
+  orElse(defaultValue: Exclude<T, undefined>): NunjucksExpr<NjContext, Exclude<T, undefined>>;
 }
 
 /** Distribute a union into an intersection (`A | B` → `A & B`). */
@@ -122,6 +139,16 @@ export interface StepOptions {
   name?: string;
   /** Templated run condition (`if`). */
   if?: Step["if"];
+  /**
+   * Sugar for `if:` (ADR-0025 §5) — a typed predicate, the SAME shape
+   * `showWhen` accepts: `field.is(v)`, `field.in(...)`, or `all(...)` to AND
+   * several. Compiles to the Nunjucks boolean `${{ … }}` string `if:` needs —
+   * `.is(v)` → `==`, `.in(...)` → the Nunjucks `in` operator, `all(...)` →
+   * `and` — see `compileWhenExpr` (params.ts) for the exact emission. Giving
+   * both `if` and `when` throws: `when` IS sugar for `if`, so authoring both
+   * is either redundant or a silent last-one-wins bug waiting to happen.
+   */
+  when?: ShowWhenCondition | ShowWhenCondition[];
 }
 
 /**
@@ -131,13 +158,25 @@ export interface StepOptions {
  * ```ts
  * step("order", "bakery:place", { input: { flavor: f.flavor } });
  * // => { id: "order", action: "bakery:place", input: { flavor: <ref> } }
+ *
+ * step("notify", "debug:log", { when: severity.is("urgent") });
+ * // => { id: "notify", action: "debug:log", if: '${{ parameters.severity == "urgent" }}' }
  * ```
  */
 export function step(id: string, action: string, opts: StepOptions = {}): Step {
   const out: Step = { id, action };
   if (opts.name !== undefined) out.name = opts.name;
   if (opts.input !== undefined) out.input = opts.input;
-  if (opts.if !== undefined) out.if = opts.if;
+  if (opts.if !== undefined && opts.when !== undefined) {
+    throw new Error(
+      `step "${id}": both \`if\` and \`when\` were given — \`when\` is sugar for \`if\`; supply exactly one.`,
+    );
+  }
+  if (opts.when !== undefined) {
+    out.if = compileWhenExpr(opts.when);
+  } else if (opts.if !== undefined) {
+    out.if = opts.if;
+  }
   return out;
 }
 

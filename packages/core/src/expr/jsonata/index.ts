@@ -174,6 +174,26 @@ export function assert(condition: unknown, message: string): void {
 }
 
 /**
+ * `require(cond, msg)` — ADR-0025 §5's preferred v2 spelling of `assert`, read
+ * as a sentence: "require the manager to be resolved, or fail with this
+ * message." Transpiles byte-identically to `assert` (both map to
+ * `$assert(cond, msg)` in fnmap.ts's `GLOBAL_MAP`) and delegates to `assert`
+ * verbatim at runtime, so the two spellings are interchangeable — `assert`
+ * stays exported/documented for authors who already know the JSONata
+ * `$assert` name; new authoring reaches for `require`.
+ *
+ * ```ts
+ * jsonata<Ctx>((c) => {
+ *   require(c.manager !== "", "Your line manager could not be resolved.");
+ *   return { ok: true };
+ * });
+ * ```
+ */
+export function require(condition: unknown, message: string): void {
+  assert(condition, message);
+}
+
+/**
  * Author-facing mirrors of JSONata's `$substringAfter` / `$substringBefore`, for
  * use inside `jsonata(...)` arrows. They compile to `$substringAfter(...)` /
  * `$substringBefore(...)` and, as the JS oracle, reproduce the engine's

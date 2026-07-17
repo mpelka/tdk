@@ -69,7 +69,7 @@ functional form is the supported authoring surface.
 
 ## `step(id, action, opts?)`
 
-Builds one `Step`. `opts` is `{ input?, name?, if? }`:
+Builds one `Step`. `opts` is `{ input?, name?, if?, when? }`:
 
 - `input?: Record<string, InputValue>` — values may be `f.<param>` refs, `env.pick`,
   `raw`/`jsonata`/`nj` expressions, or literals. `InputValue` is the loose form: a
@@ -80,11 +80,44 @@ Builds one `Step`. `opts` is `{ input?, name?, if? }`:
 - `name?: string` — the human-readable step name.
 - `if?` — a templated run condition; accepts a `string | boolean | RawRef | jsonata`/
   `nj` expression `| Resolvable` (a resolver marker).
+- `when?` — sugar for `if?`. Prefer this over hand-writing `if`.
 
 ```ts
 step("place", "bakery:place", { name: "Place order", input: { cakeName: f.cakeName } });
 // => { id: "place", action: "bakery:place", name: "Place order", input: { cakeName: <ref> } }
 ```
+
+### `when` — a typed predicate instead of a hand-written `if`
+
+`when` takes the same typed predicates a field's `showWhen` does — `field.is(v)`,
+`field.in(a, b)`, or `all(...)` to AND several — and compiles them to the Nunjucks
+boolean string `if:` needs. Hoist the controller to a const so `when` and a
+field's `showWhen` can share it:
+
+```ts
+const severity = p.enum(["Low", "Normal", "Urgent"], { title: "Severity", required: true });
+
+step("notify-oncall", "debug:log", {
+  when: severity.is("Urgent"),
+  input: { message: "An urgent oven ticket was raised" },
+});
+// => if: '${{ parameters.severity == "Urgent" }}'
+```
+
+- `field.is(v)` compiles to `==`.
+- `field.in(a, b)` compiles to the Nunjucks `in` operator.
+- `all(c1, c2)` compiles to `and`, each condition in its own parentheses.
+
+This is the desugared equivalent, written by hand:
+
+```ts
+step("notify-oncall", "debug:log", {
+  if: '${{ parameters.severity == "Urgent" }}',
+  input: { message: "An urgent oven ticket was raised" },
+});
+```
+
+Giving both `if` and `when` throws — they say the same thing two ways, so pick one.
 
 ## `p.*` — typed parameters
 
@@ -103,6 +136,8 @@ when `required: true`.
   as a bare array (optionally with an `extra` options object), or the full
   `{ enum, enumNames?, … }` object. Passing an options object and an `extra` arg is
   a type error (the overloads reject it).
+- `p.choice(values[], opts?)` or `p.choice({ value: label, … }, opts?)` — sugar
+  over `enum`/`enumNames`. Prefer this over hand-writing `enum`/`enumNames`.
 - `p.array` — `{ items?, minItems?, maxItems? }` (`items` defaults to
   `{ type: "string" }`).
 
@@ -117,6 +152,38 @@ p.string({ title: "Deliver by", format: "date" })
 p.enum(["Vanilla", "Chocolate"], { title: "Flavour", required: true })
 p.enum({ enum: ["S", "M", "L"], enumNames: ["Small", "Medium", "Large"], title: "Size" })
 p.array({ items: { type: "string" }, minItems: 1 })
+```
+
+### `p.choice` — sugar for `enum`/`enumNames`
+
+`p.choice` takes either the values on their own, or an object mapping each value
+to its display label:
+
+```ts
+p.choice(["deck", "convection", "rack"], { title: "Oven type", required: true })
+p.choice({ BK1: "Riverside", BK2: "Old Town", BK3: "Harbourfront" }, { title: "Bakery site" })
+```
+
+The object form's keys become `enum`, in the order they are written; its values
+become the parallel `enumNames`. Both forms compile to exactly the same JSON
+Schema a hand-written `p.string({ enum, enumNames })` would produce. The value is
+typed, so `.is()`/`.in()` (and a scenario fixture's `parameters`) only accept a
+value from the set you declared:
+
+```ts
+const bakeryCode = p.choice({ BK1: "Riverside", BK2: "Old Town" }, { title: "Bakery site" });
+bakeryCode.is("BK1");  // ok
+bakeryCode.is("BK3");  // a compile error — "BK3" is not one of the declared values
+```
+
+This is the desugared equivalent, written by hand:
+
+```ts
+p.string({
+  title: "Bakery site",
+  enum: ["BK1", "BK2"],
+  enumNames: ["Riverside", "Old Town"],
+})
 ```
 
 ### Custom field-type helpers
@@ -172,6 +239,32 @@ it — as <span v-pre>`errorMessage: { required: { <field>: "…" } }`</span>. T
 follows the FINAL required list: it applies when the field ends up required, whether
 from its own `required: true` or a page-level `required: [...]` override — and is
 dropped when the field ends up optional (no failure to relabel).
+
+## `.orElse(default)` — fill in an absent ref
+
+`f.<name>.orElse(default)` is sugar for the Nunjucks `default` filter. It renders
+the default value only when the parameter is genuinely absent (`undefined`) — a
+present empty string, `0` or `false` still passes through unchanged:
+
+```ts
+step("log-progress", "debug:log", {
+  input: { note: f.worklog.orElse("") },
+});
+// => note: '${{ parameters.worklog | default("") }}'
+```
+
+This is the desugared equivalent, written by hand:
+
+```ts
+step("log-progress", "debug:log", {
+  input: { note: raw`\${{ parameters.worklog | default("") }}` },
+});
+```
+
+The default is JSON-encoded into the filter: a string is quoted and escaped, a
+number or boolean is written bare (`orElse(0)` → `default(0)`, `orElse(false)` →
+`default(false)`). Call `.orElse` on any conditional field to resolve its
+possible absence before it reaches a step input or `output`.
 
 ## Multi-page forms and conditional dependencies
 
@@ -408,6 +501,24 @@ message: raw`Baking ${f.cakeName} (${f.bakeryCode})`
 
 `` raw.jsonata`...` `` (also exported as `` jsonata.raw`...` ``) is the escape hatch
 for verbatim JSONata — see [Write expressions](/guide/expressions).
+
+## `require(cond, msg)` — the guard clause spelling
+
+`require` is an alias of `assert`, read as a sentence: "require the manager to be
+resolved, or fail with this message." Use it inside a `jsonata(...)` arrow to
+guard a precondition. It compiles to exactly the same JSONata `assert` does —
+see [block-bodied arrows](/guide/expressions#block-bodied-arrows) for the full
+guide to `jsonata(...)`.
+
+```ts
+jsonata<Ctx>((c) => {
+  require(c.manager !== "", "Your line manager could not be resolved.");
+  return { ok: true };
+});
+```
+
+`assert` stays exported and documented for authors who already know the JSONata
+`$assert` name; new authoring should reach for `require`.
 
 ## Compile fails loudly
 

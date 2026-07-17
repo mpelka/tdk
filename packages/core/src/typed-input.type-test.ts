@@ -13,6 +13,7 @@
 // biome-ignore-all lint/suspicious/noExplicitAny: mirrors the marker variance under test (Ctx is `any`).
 
 import type { Ref } from "./define.ts";
+import type { NjContext, NunjucksExpr } from "./expr/nunjucks/index.ts";
 import { env, jsonata, nj, p, raw } from "./index.ts";
 import type { ParamRef } from "./params.ts";
 import type { InputValue } from "./template.ts";
@@ -151,3 +152,29 @@ const looseAcceptsPick: InputValue = pickNum;
 const looseAcceptsRaw: InputValue = rawExpr;
 const looseAcceptsLiteral: InputValue = 42;
 const looseAcceptsNested: InputValue = { a: [jNum, "x", refStr], b: { c: pickStr } };
+
+// ---------------------------------------------------------------------------
+// .orElse(default) (ADR-0025 §5, issue #16) — the result composes with
+// TypedInputValue<T>. `NunjucksExpr` is one of `TypedMarker`'s four kinds
+// (see the union above), so `.orElse`'s returned marker slots into a
+// TypedInputValue<T> position exactly like jsonata()/nj()/env.pick do.
+// ---------------------------------------------------------------------------
+
+// A conditional field types as `Ref<T | undefined>` (the shape a showWhen-aware
+// `f` carries); `.orElse` resolves the absence — the returned marker is the
+// EXACT `NunjucksExpr<NjContext, T>` instantiation, non-undefined.
+const refOptStr = p.string().ref as Ref<string | undefined>;
+const orElseResult = refOptStr.orElse("fallback");
+const exactOrElse: Exact<typeof orElseResult, NunjucksExpr<NjContext, string>> = true;
+
+// The .orElse() result slots into a TypedInputValue<string> position, exactly
+// like any other TypedMarker.
+const okOrElseInStr: TypedInputValue<string> = orElseResult;
+// @ts-expect-error — the resolved marker is string-typed; a number slot rejects it.
+const badOrElseInNum: TypedInputValue<number> = orElseResult;
+
+// On a plain Ref<T> (no `undefined` in T) `.orElse` is allowed but pointless:
+// `Exclude<T, undefined>` is just `T` again, so the call still type-checks and
+// still composes with TypedInputValue<T>.
+const plainOrElse = refStr.orElse("fallback");
+const okPlainOrElseInStr: TypedInputValue<string> = plainOrElse;

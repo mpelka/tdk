@@ -73,6 +73,19 @@ describe("assert → $assert", () => {
   });
 });
 
+describe("require → $assert (ADR-0025 v2 spelling)", () => {
+  test("a bare require statement emits the IDENTICAL `$assert(<cond>, <msg>)` assert emits", () => {
+    const viaAssert = t('(c) => { assert(c.manager !== "", "no manager"); return c.manager; }');
+    const viaRequire = t('(c) => { require(c.manager !== "", "no manager"); return c.manager; }');
+    expect(viaRequire).toBe(viaAssert);
+    expect(viaRequire).toBe('($assert((manager != ""), "no manager"); manager)');
+  });
+
+  test("require with the wrong arity is rejected", () => {
+    expect(() => t("(c) => { require(c.ok); return c.ok; }")).toThrow(/at least 2 argument/);
+  });
+});
+
 describe(".concat → $append", () => {
   test("`a.concat(b)` → `$append(a, b)` (live arrow)", () => {
     expect(js((c) => c.a.concat(c.b))).toBe("$append(a, b)");

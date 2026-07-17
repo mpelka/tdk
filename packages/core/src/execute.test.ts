@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import type { Step } from "./index.ts";
 import {
   _resetActionSimulators,
+  all,
   assert,
   assertExecuteAgainstGold,
   defineAction,
@@ -818,5 +819,106 @@ describe("execute() — target option", () => {
       target: { env: "prod", outDir: "" },
     });
     expect((output as any).greeting).toBe("Hi ok");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `.when()` — step() sugar for `if:` (ADR-0025 §5, issue #16). The compiled
+// `${{ … }}` boolean string (see define.test.ts for the exact emission) is a
+// single full expression, so `execute()` reads it through the SAME
+// "single full ${{ … }} → native value, tested with Backstage's own isTruthy"
+// path the "evalIf — Backstage isTruthy fidelity" suite above pins — a
+// `.when()` step can never diverge from evalIf on a boolean it just coerces
+// with `!!`.
+// ---------------------------------------------------------------------------
+describe(".when() — execute() skip/run per fixture", () => {
+  const severity = p.enum(["low", "normal", "urgent"], { required: true });
+  const WhenDemo = defineTemplate({
+    id: "when-demo",
+    title: "When Demo",
+    type: "service",
+    parameters: { severity },
+    steps: () => [step("notify", "debug:log", { when: severity.is("urgent"), input: { msg: "urgent!" } })],
+  });
+
+  test("severity !== 'urgent' skips the step (falsy `${{ … }}`)", async () => {
+    const { steps } = await execute(WhenDemo, { parameters: { severity: "normal" } });
+    expect(steps.notify!.skipped).toBe(true);
+  });
+
+  test("severity === 'urgent' runs the step (truthy `${{ … }}`)", async () => {
+    const { steps } = await execute(WhenDemo, {
+      parameters: { severity: "urgent" },
+      steps: { notify: { output: {} } },
+    });
+    expect(steps.notify!.skipped).toBeUndefined();
+    expect(steps.notify!.input).toEqual({ msg: "urgent!" });
+  });
+
+  test("all(...) requires every condition — one false branch still skips", async () => {
+    const allSeverity = p.enum(["low", "normal", "urgent"], { required: true });
+    const problemArea = p.enum(["heating", "conveyor", "other"], { required: true });
+    const AllDemo = defineTemplate({
+      id: "when-all-demo",
+      title: "When All Demo",
+      type: "service",
+      parameters: { severity: allSeverity, problemArea },
+      steps: () => [
+        step("escalate", "debug:log", {
+          when: all(allSeverity.is("urgent"), problemArea.is("heating")),
+          input: {},
+        }),
+      ],
+    });
+    const bothMatch = await execute(AllDemo, {
+      parameters: { severity: "urgent", problemArea: "heating" },
+      steps: { escalate: { output: {} } },
+    });
+    expect(bothMatch.steps.escalate!.skipped).toBeUndefined();
+
+    const onlyOneMatches = await execute(AllDemo, {
+      parameters: { severity: "urgent", problemArea: "conveyor" },
+    });
+    expect(onlyOneMatches.steps.escalate!.skipped).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `.orElse(default)` — sugar for the Nunjucks `default` filter on a ref
+// (ADR-0025 §5, issue #16). Renders the default when the param is ABSENT
+// (undefined) and the actual value when PRESENT — exactly the filter's own
+// semantics (see params.ts's ParamRef.orElse doc for why `??`/njDefault, which
+// also catches `null`, is a different filter).
+// ---------------------------------------------------------------------------
+describe(".orElse() — execute() renders the default when absent, the value when present", () => {
+  const WorklogDemo = defineTemplate({
+    id: "worklog-demo",
+    title: "Worklog Demo",
+    type: "service",
+    parameters: { worklog: p.string({ title: "Worklog" }) },
+    steps: (f) => [step("log", "debug:log", { input: { note: f.worklog.orElse("none") } })],
+    output: (f) => ({ note: f.worklog.orElse("none") }),
+  });
+
+  test("an absent worklog renders the default", async () => {
+    const { output, steps } = await execute(WorklogDemo, { parameters: {}, steps: { log: { output: {} } } });
+    expect(output).toEqual({ note: "none" });
+    expect(steps.log!.input).toEqual({ note: "none" });
+  });
+
+  test("a present worklog renders the actual value", async () => {
+    const { output } = await execute(WorklogDemo, {
+      parameters: { worklog: "baked 3 trays" },
+      steps: { log: { output: {} } },
+    });
+    expect(output).toEqual({ note: "baked 3 trays" });
+  });
+
+  test("a present EMPTY STRING is not the same as absent (default fires only on undefined)", async () => {
+    const { output } = await execute(WorklogDemo, {
+      parameters: { worklog: "" },
+      steps: { log: { output: {} } },
+    });
+    expect(output).toEqual({ note: "" });
   });
 });
