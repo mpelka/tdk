@@ -107,6 +107,9 @@ step("notify-oncall", "debug:log", {
 - `field.is(v)` compiles to `==`.
 - `field.in(a, b)` compiles to the Nunjucks `in` operator.
 - `all(c1, c2)` compiles to `and`, each condition in its own parentheses.
+- `any(...)` is not accepted here — an OR on one field is that field's
+  `.in([...])`. (`any` is `showWhen` vocabulary; passing it to `when` is a type
+  error, and throws at compile.)
 
 This is the desugared equivalent, written by hand:
 
@@ -315,31 +318,38 @@ controller Y has value Z — declare every field flat in a page's props and put 
 `showWhen` on the conditional ones. At compile, TDK compiles the page's `showWhen`
 rules into the same nested `dependencies`/`oneOf` tree that `dep.when` produces.
 
-Write `showWhen` with the typed form so the editor catches a mistyped value. Hoist
-the controllers to consts and name them with `.is(value)` (or `.in(a, b)` for OR);
-combine several with `all(...)`. Because a controller carries its own value type,
-`style.is("Layred")` is a TypeScript error in your editor — not just at compile:
+Give each field its own visibility with `.showWhen(predicate)`. Hoist the
+controllers to consts, then name them with `.is(value)` (or `.in([a, b])` for OR)
+and compose several with `all(...)`. Because a controller carries its own value
+type, `style.is("Layred")` is a TypeScript error in your editor — not just at
+compile:
 
 ```ts
 import { all, p, page } from "@tdk/core";
 
 const style = p.enum(["Layered", "Cupcakes"], { required: true });
-const topper = p.enum(["Custom", "Standard"], { showWhen: style.is("Layered") });
+const topper = p.enum(["Custom", "Standard"]).showWhen(style.is("Layered"));
+const topperText = p.string({ required: true }).showWhen(all(style.is("Layered"), topper.is("Custom"))); // AND → auto-nested
 
-page("Cake & Decoration", {
-  style,
-  topper,
-  topper_text: p.string({ required: true, showWhen: all(style.is("Layered"), topper.is("Custom")) }), // AND → auto-nested
-});
+page("Cake & Decoration", { style, topper, topper_text: topperText });
 ```
 
 - `controller.is(value)` reveals the field in that value's branch.
-- `controller.in(a, b)` reveals it across several branches (OR).
-- `all(c1, c2)` ANDs conditions — the field appears only when both hold.
+- `controller.in([a, b])` reveals it across several branches (OR on one field).
+  The variadic `controller.in(a, b)` is the same thing.
+- `all(c1, c2)` ANDs predicates — the field appears only when both hold.
+- `any(size.is("M"), size.is("L"))` ORs predicates on ONE field — the same as
+  `size.in(["M", "L"])`, read as a disjunction. Every branch must test the same
+  field; an OR across two different fields has no wire form and fails at compile,
+  naming the fields (see [Compile fails loudly](#compile-fails-loudly)).
 - The value is literal-checked: a `p.enum` accepts only its own values, a
   `p.boolean` accepts only `true`/`false`.
-- The condition carries the controller instance, so compile resolves its name —
+- The predicate carries the controller instance, so compile resolves its name —
   the reference survives renaming the property key.
+
+`.showWhen(...)` and the `showWhen:` option are the same feature — pass a predicate
+to whichever reads better. Set a field's visibility once: declaring it both ways
+throws.
 
 The record form is the inline shorthand — no hoisting, backed by the same compile
 check (a mistyped value fails at compile, not in the editor):
@@ -363,7 +373,8 @@ Both forms compile identically. In either:
 - if a field's controller is itself conditional, its dependency auto-nests inside
   that controller's branch
 
-A `showWhen` referencing a controller that is not a property on the page, a
+A `showWhen` referencing a controller that is not a property on the same page (a
+cross-page reveal has no wire form), an `any(...)` OR across different fields, a
 `showWhen` cycle, and a `showWhen` colliding with a `dep.when` on the same
 controller all throw at compile (see [Compile fails loudly](#compile-fails-loudly)).
 
@@ -528,6 +539,9 @@ A whole class of authoring mistakes that used to ship silently now throw at comp
 - a `parameters` property whose value is not a `Param` (wrap it in a `p.*` helper)
 - a field's `showWhen` and a controller's `dep.when` both targeting one controller
 - a `showWhen` cycle, or a `showWhen` referencing a non-existent controller
+- an `any(...)` OR spanning different fields (one dependency keys off one
+  controller — use `.in([...])` for an OR on one field)
+- a `showWhen` controller on a different page (each page is its own object schema)
 - an `env.pick` marker or a resolver marker surviving into a compiled artifact (a
   marker that was never resolved)
 - an `extraSpec` key colliding with a field TDK already models under `spec`

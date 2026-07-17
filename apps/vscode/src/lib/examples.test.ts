@@ -70,9 +70,9 @@ describe("examples — real compiled parameters through the splitter", () => {
     const yaml = compileExample("conditional-forms");
     const doc = parseYaml(yaml) as { spec?: { parameters?: unknown } };
     const pages = toFormPages(doc.spec?.parameters);
-    // Three pages: Order Type, Packaging & Speed, Baker Notes.
-    expect(pages.length).toBe(3);
-    expect(pages.map((p) => p.title)).toEqual(["Order Type", "Packaging & Speed", "Baker Notes"]);
+    // Four pages: Order Type, Packaging & Speed, Baker Notes, Delivery.
+    expect(pages.length).toBe(4);
+    expect(pages.map((p) => p.title)).toEqual(["Order Type", "Packaging & Speed", "Baker Notes", "Delivery"]);
     // The Baker Notes page has bakerNotes with ui:widget: textarea, lifted out.
     const bakerNotes = pages[2]!;
     expect(bakerNotes.uiSchema).toMatchObject({ bakerNotes: { "ui:widget": "textarea" } });

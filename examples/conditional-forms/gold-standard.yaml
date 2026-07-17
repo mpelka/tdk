@@ -122,6 +122,82 @@ spec:
           title: Contact email
           format: email
           errorMessage: Enter a valid contact email so the baker can reach you.
+
+    # --- Page 4: the COMPOSED form — SAME synthesis, authored ADR-0025's way ----
+    # In TDK this page uses NO `dep.*`: every conditional field carries a
+    # `.showWhen(...)` predicate and the compiler synthesises this tree. Two
+    # independent discriminators sit on one page:
+    #   - `deliveryMethod` reveals `courierSpeed` on the courier branch, and an
+    #     `all(...)` AND-chain (courier AND express) nests `insurance` INSIDE
+    #     `courierSpeed`'s express branch — two levels deep, like page 1.
+    #   - `contactPref` reveals `mobile` via `any(sms, call)` (== .in) and
+    #     `notifyEmail` via `.in(["email", "sms"])`; both name `contactPref`, so
+    #     they GROUP into one dependency with the field(s) per matching branch.
+    - title: Delivery
+      properties:
+        deliveryMethod:
+          type: string
+          title: Delivery method
+          enum:
+            - collection
+            - courier
+        contactPref:
+          type: string
+          title: Contact preference
+          enum:
+            - sms
+            - email
+            - call
+      dependencies:
+        deliveryMethod:
+          oneOf:
+            - properties:
+                deliveryMethod:
+                  const: collection
+            - properties:
+                deliveryMethod:
+                  const: courier
+                courierSpeed:
+                  type: string
+                  title: Courier speed
+                  enum:
+                    - standard
+                    - express
+              dependencies:
+                courierSpeed:
+                  oneOf:
+                    - properties:
+                        courierSpeed:
+                          const: standard
+                    - properties:
+                        courierSpeed:
+                          const: express
+                        insurance:
+                          type: boolean
+                          title: Insure the delivery?
+        contactPref:
+          oneOf:
+            - properties:
+                contactPref:
+                  const: sms
+                mobile:
+                  type: string
+                  title: Mobile number
+                notifyEmail:
+                  type: string
+                  title: Notification email
+            - properties:
+                contactPref:
+                  const: email
+                notifyEmail:
+                  type: string
+                  title: Notification email
+            - properties:
+                contactPref:
+                  const: call
+                mobile:
+                  type: string
+                  title: Mobile number
   steps:
     - id: log-order
       name: Log the order

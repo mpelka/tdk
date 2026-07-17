@@ -88,22 +88,71 @@ export class ShowWhenCondition {
   ) {}
 }
 
-/** A `showWhen` authored either as the record form or as ref-based condition(s). */
-export type ShowWhenInput = ShowWhen | ShowWhenCondition | ShowWhenCondition[];
+/**
+ * An OR across ref-based conditions — `any(size.is("M"), size.is("L"))`. A
+ * JSON-Schema `dependencies` node keys off exactly ONE controller, so an OR is
+ * expressible only when every branch tests the SAME field: it lowers to that
+ * field's value list (identical to `size.in(["M", "L"])`). An OR spanning
+ * DIFFERENT fields has no wire representation and is rejected at compile
+ * (`normalizeShowWhen` → `resolveAny`), naming the fields and pointing at the fix.
+ */
+export class ShowWhenAny {
+  readonly __tdkShowWhenAny = true as const;
+  constructor(
+    /** The OR-ed conditions — one per branch. Grouped by controller at compile. */
+    readonly conditions: ShowWhenCondition[],
+  ) {}
+}
+
+/** One authored predicate: a single condition or an `any(...)` OR of conditions. */
+export type ShowWhenPredicate = ShowWhenCondition | ShowWhenAny;
+
+/** A `showWhen` authored either as the record form or as ref-based predicate(s). */
+export type ShowWhenInput = ShowWhen | ShowWhenPredicate | ShowWhenPredicate[];
 
 /**
- * AND-compose ref-based conditions — the marker mirror of the record form's
+ * AND-compose ref-based predicates — the marker mirror of the record form's
  * multiple keys. `all(a.is("x"), b.is(true))` reveals a field only when BOTH hold,
- * exactly as `{ a: "x", b: true }` does. A single condition needs no `all(...)`:
- * pass it to `showWhen` directly.
+ * exactly as `{ a: "x", b: true }` does. A single predicate needs no `all(...)`:
+ * pass it to `showWhen` directly. An `any(...)` OR may sit inside `all(...)` — it
+ * contributes its one (same-field) controller as one AND-ed term.
+ *
+ * Generic over the argument tuple (returning `T`, not the widened
+ * `ShowWhenPredicate[]`) so each call site keeps the precise element types: an
+ * `all(...)` of plain conditions still satisfies `step()`'s `when?:` option
+ * (which accepts `ShowWhenCondition[]` ONLY — `any(...)` is showWhen-layer
+ * vocabulary, see `compileWhenExpr`), while an `all(...)` containing `any(...)`
+ * satisfies `showWhen` but is a TYPE error in `when:` position.
  */
-export function all(...conditions: ShowWhenCondition[]): ShowWhenCondition[] {
+export function all<T extends ShowWhenPredicate[]>(...conditions: T): T {
   return conditions;
+}
+
+/**
+ * OR-compose ref-based conditions on ONE field — `any(size.is("M"), size.is("L"))`
+ * is `size.in(["M", "L"])`, read as a disjunction. Every condition must test the
+ * SAME controller: an OR across different fields cannot be expressed as a
+ * JSON-Schema dependency (one node, one controller), so the compiler rejects it
+ * with a loud diagnostic naming the fields. Usable as a whole `showWhen` or as one
+ * term inside `all(...)`.
+ */
+export function any(...conditions: ShowWhenCondition[]): ShowWhenAny {
+  return new ShowWhenAny(conditions);
 }
 
 /** True for a ref-based condition marker (vs the plain record form). */
 function isShowWhenCondition(value: unknown): value is ShowWhenCondition {
   return value instanceof ShowWhenCondition;
+}
+
+/** True for an `any(...)` OR marker. */
+function isShowWhenAny(value: unknown): value is ShowWhenAny {
+  return value instanceof ShowWhenAny;
+}
+
+/** True for either ref-based predicate marker (condition or `any(...)`). */
+function isShowWhenPredicate(value: unknown): value is ShowWhenPredicate {
+  return isShowWhenCondition(value) || isShowWhenAny(value);
 }
 
 /**
@@ -152,11 +201,28 @@ function compileWhenFragment(cond: ShowWhenCondition): string {
  * `evalIf` via the identical "single full expression → native value" path
  * (see execute.ts) — the two can never disagree on a boolean they both just
  * coerce with `!!`.
+ *
+ * `any(...)` is NOT accepted here — deliberately, and separately from the
+ * schema layer's reason. `showWhen` rejects a cross-field OR because the wire
+ * cannot express it; a step condition compiles to Nunjucks, which CAN (`or`).
+ * Wiring `any(...)` into `.when()` is therefore a real design decision (its
+ * semantics would DIVERGE from `showWhen`'s), deferred — not a rebase
+ * side-effect. Until then it fails loudly at both layers: the type (`when?:`
+ * names only `ShowWhenCondition`) and this runtime guard for untyped callers.
  */
 export function compileWhenExpr(input: ShowWhenCondition | ShowWhenCondition[]): string {
   const conditions = Array.isArray(input) ? input : [input];
   if (conditions.length === 0) {
     throw new Error("when(...) requires at least one condition — pass a field.is(...)/.in(...) or all(...).");
+  }
+  for (const cond of conditions) {
+    if (isShowWhenAny(cond)) {
+      throw new Error(
+        "when(...) does not accept any(...) — pass field.is(...)/.in([...]) conditions, or all(...) of " +
+          "them. An OR on ONE field is that field's .in([...]). (A cross-field OR in a step condition is " +
+          "expressible in Nunjucks but not wired into when(...) yet — a deliberate follow-up.)",
+      );
+    }
   }
   const fragments = conditions.map(compileWhenFragment);
   const body = fragments.length === 1 ? fragments[0]! : fragments.map((f) => `(${f})`).join(" and ");
@@ -164,32 +230,75 @@ export function compileWhenExpr(input: ShowWhenCondition | ShowWhenCondition[]):
 }
 
 /**
- * Normalize an authored `showWhen` (record form, a single condition, or an
- * `all(...)` list) into the record form pages.ts compiles. Ref-based conditions
+ * Thrown-message helper: a predicate naming a param NOT bound on the same
+ * form/page (its `.is`/`.in`/`any` never resolved to a property key).
+ */
+function unboundControllerError(): Error {
+  return new Error(
+    "showWhen condition references a param that is not part of this form/page — declare the " +
+      "controller as a property on the same page (its .ref/.is resolve from its bound name).",
+  );
+}
+
+/**
+ * Resolve an `any(...)` OR to a single `[controller, value(s)]` record entry — or
+ * throw. Every condition must test the SAME controller: the OR then lowers to that
+ * field's deduped value list (the `.in([...])` form). Different controllers have no
+ * single-node wire representation, so this rejects them, naming the fields.
+ */
+function resolveAny(pred: ShowWhenAny): [string, ShowWhenValue | ShowWhenValue[]] {
+  if (pred.conditions.length === 0) {
+    throw new Error("any(...) needs at least one condition — pass one or more field.is(...) / field.in(...).");
+  }
+  const names: string[] = [];
+  const values: ShowWhenValue[] = [];
+  for (const cond of pred.conditions) {
+    const name = cond.controller.boundName;
+    if (name === undefined) throw unboundControllerError();
+    if (!names.includes(name)) names.push(name);
+    for (const v of cond.values) if (!values.includes(v)) values.push(v);
+  }
+  if (names.length > 1) {
+    throw new Error(
+      `showWhen any(...) mixes different fields ${names.map((n) => `"${n}"`).join(", ")} — an OR across ` +
+        `different fields cannot be expressed as a JSON-Schema dependency (each dependency keys off ONE ` +
+        `controller). For an OR on ONE field use that field's .in([...]); a genuine cross-field OR needs ` +
+        `separate conditional fields, one per controller.`,
+    );
+  }
+  return [names[0]!, values.length === 1 ? values[0]! : values];
+}
+
+/** Resolve one predicate to its `[controller, value(s)]` record entry. */
+function predicateEntry(pred: ShowWhenPredicate): [string, ShowWhenValue | ShowWhenValue[]] {
+  if (isShowWhenAny(pred)) return resolveAny(pred);
+  const name = pred.controller.boundName;
+  if (name === undefined) throw unboundControllerError();
+  return [name, pred.values.length === 1 ? pred.values[0]! : pred.values];
+}
+
+/**
+ * Normalize an authored `showWhen` (record form, a single predicate, or an
+ * `all(...)` list) into the record form pages.ts compiles. Ref-based predicates
  * resolve each controller's BOUND name — so the marker survives renaming the
  * property key, and a marker naming a param NOT on the same form throws here
- * (loud, pointed) rather than silently emitting an unbound dependency.
+ * (loud, pointed) rather than silently emitting an unbound dependency. An
+ * `any(...)` term lowers to its single field's OR value list, or throws if it
+ * spans different fields (the wire cannot express a cross-field OR).
  */
 export function normalizeShowWhen(input: ShowWhenInput): ShowWhen {
-  const conditions = isShowWhenCondition(input) ? [input] : Array.isArray(input) ? input : undefined;
-  if (!conditions) return input as ShowWhen;
+  const predicates = isShowWhenPredicate(input) ? [input] : Array.isArray(input) ? input : undefined;
+  if (!predicates) return input as ShowWhen;
   const out: ShowWhen = {};
-  for (const cond of conditions) {
-    const name = cond.controller.boundName;
-    if (name === undefined) {
-      throw new Error(
-        "showWhen condition references a param that is not part of this form/page — declare the " +
-          "controller as a property on the same page (its .ref/.is resolve from its bound name).",
-      );
-    }
+  for (const pred of predicates) {
+    const [name, value] = predicateEntry(pred);
     if (name in out) {
       throw new Error(
-        `showWhen names controller "${name}" twice — combine its values into one .in(${cond.values
-          .map((v) => JSON.stringify(v))
-          .join(", ")}) instead of repeating the controller.`,
+        `showWhen names controller "${name}" twice — combine its values into one .in([...]) ` +
+          `(or any(...)) instead of repeating the controller.`,
       );
     }
-    out[name] = cond.values.length === 1 ? cond.values[0]! : cond.values;
+    out[name] = value;
   }
   return out;
 }
@@ -212,10 +321,12 @@ export interface BaseParamOptions<T> {
    * Reveal this field only when controller field(s) match — compiled to nested
    * `dependencies`/`oneOf` at compile. Build-time only; never emitted as schema.
    *
-   * Author it as ref-based condition(s) — `orderType.is("wedding")`, or
-   * `all(orderType.is("wedding"), topper.is(true))` to AND them — so the editor
+   * Author it as ref-based predicate(s) — `orderType.is("wedding")`,
+   * `all(orderType.is("wedding"), topper.is(true))` to AND them, or
+   * `any(size.is("M"), size.is("L"))` to OR one field — so the editor
    * literal-checks the value; or as the inline record shorthand
-   * `{ orderType: "wedding" }` (backed by the compile check). Both compile alike.
+   * `{ orderType: "wedding" }` (backed by the compile check). All compile alike.
+   * The `.showWhen(...)` method is the fluent equivalent of this option.
    */
   showWhen?: ShowWhenInput;
   /**
@@ -385,11 +496,13 @@ export abstract class Param<T> {
   private _ref?: ParamRef;
 
   /**
-   * Reveal condition AS AUTHORED (record form, a single condition, or an
-   * `all(...)` list), if any. Read `resolveShowWhen()` for the normalized record
-   * the compiler consumes — it needs bound names, so it can't run at construction.
+   * Reveal condition AS AUTHORED (record form, a single predicate, or an
+   * `all(...)` list), if any. Set at construction (the `showWhen:` option) or via
+   * the `.showWhen(...)` method — one funnel, so both authoring idioms behave
+   * alike. Private: read `resolveShowWhen()` for the normalized record the compiler
+   * consumes (it needs bound names, so it can't run at construction).
    */
-  readonly showWhen?: ShowWhenInput;
+  private _showWhen?: ShowWhenInput;
 
   /**
    * The authored `required`-failure message, if any — lifted from `errorMessage`
@@ -409,7 +522,7 @@ export abstract class Param<T> {
     errorMessage?: string | Record<string, string>,
   ) {
     this.required = required === true;
-    this.showWhen = showWhen;
+    this._showWhen = showWhen;
     // `isRequired: true` deliberately — assembly decides applicability from the
     // FINAL required list (see the field's doc above).
     this.requiredErrorMessage = splitErrorMessage(errorMessage, true).required;
@@ -426,22 +539,48 @@ export abstract class Param<T> {
   }
 
   /**
-   * This param as an OR condition — `orderType.in("custom", "wedding")` reveals
-   * the field in ANY of those branches, compiling identically to the record form's
-   * array value `{ orderType: ["custom", "wedding"] }`.
+   * This param as an OR condition — reveal the field in ANY of the listed
+   * branches, compiling identically to the record form's array value
+   * `{ orderType: ["custom", "wedding"] }`. Two spellings, same result: the
+   * variadic `orderType.in("custom", "wedding")` and the array `orderType.in(
+   * ["custom", "wedding"])` (ADR-0025's form). Values are literal-checked either
+   * way; the controller name resolves at compile from its bound key.
    */
-  in(...values: T[]): ShowWhenCondition {
-    return new ShowWhenCondition(this as Param<unknown>, values as ShowWhenValue[]);
+  in(...values: T[]): ShowWhenCondition;
+  in(values: readonly T[]): ShowWhenCondition;
+  in(...args: unknown[]): ShowWhenCondition {
+    const values = (args.length === 1 && Array.isArray(args[0]) ? args[0] : args) as ShowWhenValue[];
+    return new ShowWhenCondition(this as Param<unknown>, values);
+  }
+
+  /**
+   * Attach a reveal condition fluently — `p.string({...}).showWhen(area.is("other"))`
+   * — the method twin of the `showWhen:` option (ADR-0025 Decision 1's authoring
+   * surface). Accepts a single predicate, an `all(...)` AND-chain, an `any(...)`
+   * same-field OR, or the record shorthand. Returns the SAME param (a fluent handle,
+   * not a copy) so it drops straight into a page's `properties`. Throws if a
+   * condition was already set (via the option or a prior call) — a field's
+   * visibility is declared once, in one place.
+   */
+  showWhen(condition: ShowWhenInput): this {
+    if (this._showWhen !== undefined) {
+      throw new Error(
+        "showWhen is already set on this param — declare a field's visibility once, as either the " +
+          "showWhen: option or the .showWhen(...) method, not both.",
+      );
+    }
+    this._showWhen = condition;
+    return this;
   }
 
   /**
    * The normalized `showWhen` record the compiler consumes, or `undefined` if this
-   * param has no reveal condition. Ref-based conditions resolve their controller's
+   * param has no reveal condition. Ref-based predicates resolve their controller's
    * bound name here (throwing if it is not part of the form) — the record form
    * passes through unchanged. Call only after names are bound.
    */
   resolveShowWhen(): ShowWhen | undefined {
-    return this.showWhen === undefined ? undefined : normalizeShowWhen(this.showWhen);
+    return this._showWhen === undefined ? undefined : normalizeShowWhen(this._showWhen);
   }
 
   /**

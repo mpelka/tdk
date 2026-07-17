@@ -134,13 +134,15 @@ export type {
   ParamMap,
   ShowWhen,
   ShowWhenInput,
+  ShowWhenPredicate,
   ShowWhenValue,
   StringParamOptions,
 } from "./params.ts";
 // Parameters. `Param` is the base class (long exported as `ParamBase`, kept as
 // a compat alias); `ParamRef` is a param's `${{ parameters.<name> }}` ref.
-// `all(...)` AND-composes the ref-based `showWhen` conditions `.is`/`.in` build.
-export { all, Param, ParamBase, ParamRef, p, requireParam, ShowWhenCondition } from "./params.ts";
+// `all(...)` AND-composes ref-based `showWhen` predicates; `any(...)` OR-composes
+// them on ONE field (`.is`/`.in` build the leaf conditions).
+export { all, any, Param, ParamBase, ParamRef, p, requireParam, ShowWhenAny, ShowWhenCondition } from "./params.ts";
 export type {
   Resolvable,
   ResolveContext,
