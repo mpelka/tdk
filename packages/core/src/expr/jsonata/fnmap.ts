@@ -228,6 +228,20 @@ export const GLOBAL_MAP: Record<string, FnMapEntry> = {
     maxArgs: 2,
     label: "assert(condition, message)",
   },
+  // `require(cond, msg)` — ADR-0025 §5's preferred v2 spelling of `assert`, read
+  // as a sentence ("require the manager to be resolved, or fail"). Maps to the
+  // SAME `$assert` JSONata target with the SAME arity, so `require(...)` and
+  // `assert(...)` transpile byte-identically — a separate map key (not an alias
+  // loop) so an unsupported-call error lists both names. The runtime mirror
+  // (`require`, exported from expr/jsonata/index.ts) delegates to `assert`
+  // verbatim, so the differential harness exercises both sides identically.
+  require: {
+    jsonata: "assert",
+    args: receiverFirst,
+    minArgs: 2,
+    maxArgs: 2,
+    label: "require(condition, message)",
+  },
   // `substringAfter(str, chars)` / `substringBefore(str, chars)` →
   // `$substringAfter(...)` / `$substringBefore(...)`. Recognised as free
   // functions (like `assert`) so e.g. `substringAfter(c.ref, "user:default/")`

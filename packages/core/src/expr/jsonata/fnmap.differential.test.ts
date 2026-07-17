@@ -11,7 +11,7 @@
 // non-string arrays) live in docs/expression-support.md.
 
 import { describe, expect, test } from "bun:test";
-import { assert, assertDifferential, jsonata, substringAfter, substringBefore } from "../../index.ts";
+import { assert, assertDifferential, jsonata, require, substringAfter, substringBefore } from "../../index.ts";
 import type { DifferentialOptions } from "./differential.ts";
 import { GLOBAL_MAP, METHOD_MAP, SPECIAL_GLOBAL_FORMS, SPECIAL_METHOD_FORMS } from "./fnmap.ts";
 import type { JsonataExpr } from "./index.ts";
@@ -105,6 +105,21 @@ const GLOBAL_ROWS: Record<string, Row> = {
           return c.qty;
         }),
         fixtures: [{ qty: 3 }, { qty: 0 }], // passing AND throwing (throw-for-throw agreement)
+      },
+    ],
+  },
+  // `require` is ADR-0025's preferred v2 spelling of `assert` — identical
+  // transpilation (both map to `$assert` in fnmap.ts) and identical runtime
+  // behaviour (delegates to `assert` verbatim), so the SAME differential shape
+  // pins both sides agree — passing AND throwing.
+  require: {
+    cases: [
+      {
+        expr: jsonata<any>((c) => {
+          require(c.qty > 0, "the order needs at least one cake");
+          return c.qty;
+        }),
+        fixtures: [{ qty: 3 }, { qty: 0 }],
       },
     ],
   },

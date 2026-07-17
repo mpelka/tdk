@@ -11,6 +11,9 @@
 // it from the key in the `params` object at compile time (see template.ts).
 
 import type { RawRef, RefResolver } from "./expr/index.ts";
+import type { NjContext } from "./expr/nunjucks/index.ts";
+import { NunjucksExpr, validateNunjucks } from "./expr/nunjucks/index.ts";
+import { quote } from "./expr/shared.ts";
 
 /** A JSON-Schema fragment for a single parameter (Scaffolder property). */
 export type JsonSchema = Record<string, unknown>;
@@ -101,6 +104,63 @@ export function all(...conditions: ShowWhenCondition[]): ShowWhenCondition[] {
 /** True for a ref-based condition marker (vs the plain record form). */
 function isShowWhenCondition(value: unknown): value is ShowWhenCondition {
   return value instanceof ShowWhenCondition;
+}
+
+/**
+ * JSON-quote a `showWhen`/`.when()` VALUE for a Nunjucks literal: a string
+ * quotes/escapes (via the shared `quote` the jsonata/nunjucks transpilers use);
+ * a number or boolean stays bare.
+ */
+function encodeNjLiteral(value: ShowWhenValue): string {
+  return typeof value === "string" ? quote(value) : String(value);
+}
+
+/**
+ * Compile ONE ref-based condition to its Nunjucks boolean FRAGMENT (no
+ * `${{ }}` wrapper, no outer parens — the caller adds those when composing
+ * several). `field.is(v)` (a single value) is equality; `field.in(...)`
+ * (several values) is the Nunjucks `in` membership operator — mirroring
+ * `normalizeShowWhen`'s scalar-vs-array split for the JSON-Schema compiler.
+ */
+function compileWhenFragment(cond: ShowWhenCondition): string {
+  const name = cond.controller.boundName;
+  if (name === undefined) {
+    throw new Error(
+      "when(...) condition references a param that is not part of this template — declare the " +
+        "controller as a property in `parameters` (its .ref/.is/.in resolve from its bound name).",
+    );
+  }
+  const path = `parameters.${name}`;
+  if (cond.values.length === 1) {
+    return `${path} == ${encodeNjLiteral(cond.values[0]!)}`;
+  }
+  const values = cond.values.map(encodeNjLiteral).join(", ");
+  return `${path} in [${values}]`;
+}
+
+/**
+ * Compile a `.when()` predicate (`step()`'s `when` option, ADR-0025 §5) — the
+ * SAME typed conditions `showWhen` accepts (`field.is(v)`, `field.in(...)`, or
+ * `all(...)` to AND them) — to the full Scaffolder `${{ … }}` boolean string
+ * assigned to `Step.if`. A single condition emits unparenthesized
+ * (`${{ parameters.priority == "High" }}`); several `all(...)` conditions each
+ * get their own parens, joined with the Nunjucks `and` operator, mirroring
+ * `showWhen`'s multi-key AND semantics.
+ *
+ * The emitted expression is a single full `${{ … }}` block evaluating to a
+ * boolean, so it is read by BOTH the real Backstage `isTruthy` and core's
+ * `evalIf` via the identical "single full expression → native value" path
+ * (see execute.ts) — the two can never disagree on a boolean they both just
+ * coerce with `!!`.
+ */
+export function compileWhenExpr(input: ShowWhenCondition | ShowWhenCondition[]): string {
+  const conditions = Array.isArray(input) ? input : [input];
+  if (conditions.length === 0) {
+    throw new Error("when(...) requires at least one condition — pass a field.is(...)/.in(...) or all(...).");
+  }
+  const fragments = conditions.map(compileWhenFragment);
+  const body = fragments.length === 1 ? fragments[0]! : fragments.map((f) => `(${f})`).join(" and ");
+  return `\${{ ${body} }}`;
 }
 
 /**
@@ -271,6 +331,43 @@ export class ParamRef implements RawRef {
   /** The literal expression string, env-independent. */
   toString(): string {
     return this.render({ env: "" });
+  }
+
+  /**
+   * Sugar for the Nunjucks `default` filter (ADR-0025 §5): `f.worklog.orElse("")`
+   * emits `${{ parameters.worklog | default("") }}` — the fallback the compiler
+   * would otherwise make the author defend by hand at every use site. The
+   * default is JSON-encoded into the filter (a string quotes/escapes exactly as
+   * `JSON.stringify` does; a number/boolean/null stays bare), then the whole
+   * expression is validated with the real Nunjucks engine, same as `nj(...)`.
+   *
+   * Returns a `NunjucksExpr` — a `TypedMarker`, so the result composes with
+   * `TypedInputValue<T>` (see typed-input.ts) — carrying a JS oracle that
+   * mirrors the filter's own semantics: it fires ONLY when the parameter is
+   * `undefined` (not a present `null`/`""`/`0`/`false`), matching Nunjucks'
+   * `default` filter exactly (see nunjucks/transpile.ts's `nullishDefault` note
+   * on why `??`/`njDefault` — which ALSO catches `null` — is a different filter).
+   *
+   * Untyped at this base (`ParamRef` is not generic over the param's value);
+   * `Ref<T>.orElse` in define.ts narrows the signature to the param's `T`
+   * (resolving `T | undefined` to `T`) — the runtime method is this one.
+   */
+  orElse(defaultValue: unknown): NunjucksExpr<NjContext, unknown> {
+    if (defaultValue === undefined) {
+      throw new Error(
+        "orElse(...) default must not be undefined — an absent default has no meaning; " +
+          'pass a concrete fallback (e.g. "" or 0).',
+      );
+    }
+    const name = this.param.requireName();
+    const encoded = JSON.stringify(defaultValue);
+    const expr = `parameters.${name} | default(${encoded})`;
+    validateNunjucks(expr);
+    const fn = (ctx: NjContext): unknown => {
+      const v = (ctx.parameters as Record<string, unknown>)[name];
+      return v === undefined ? defaultValue : v;
+    };
+    return new NunjucksExpr<NjContext, unknown>(expr, fn);
   }
 }
 
@@ -555,6 +652,48 @@ function enumParam<const V extends string>(
   return new EnumParam(resolved);
 }
 
+/** Options accepted by `p.choice` — everything `p.string` takes except `enum`/`enumNames`, which `p.choice` derives from its values. */
+export type ChoiceOptions = Omit<StringParamOptions, "enum" | "enumNames">;
+
+/**
+ * A string param constrained to a fixed set of values — sugar over the
+ * `enum`/`enumNames` pair (ADR-0025 §5). Two forms:
+ *
+ *   - `p.choice(["deck", "convection", "rack"], opts)` — `enum` only, in array
+ *     order.
+ *   - `p.choice({ BK1: "Riverside", BK2: "Old Town" }, opts)` — `enum` from the
+ *     object's KEYS, `enumNames` from its VALUES, in insertion order.
+ *
+ * Routes through `p.string({ enum, enumNames, ...opts })` verbatim — literally
+ * the same `StringParam` construction a hand-written call would produce — so
+ * the compiled schema is BYTE-IDENTICAL to it (`buildSchema`'s emission order
+ * is fixed by the function itself, not by the input object's key order; see
+ * params.test.ts). The value union is TYPED: the array form's element type or
+ * the object form's key union flows into the returned `Param<V>`, so
+ * `.is()`/`.in()` and fixture `parameters` literal-check against them.
+ *
+ * ```ts
+ * p.choice(["deck", "convection", "rack"], { title: "Oven type", required: true });
+ * p.choice({ BK1: "Riverside", BK2: "Old Town" }, { title: "Bakery site" });
+ * ```
+ */
+function choiceParam<const V extends string>(values: readonly V[], opts?: ChoiceOptions): Param<V>;
+function choiceParam<const O extends Record<string, string>>(
+  labels: O,
+  opts?: ChoiceOptions,
+): Param<Extract<keyof O, string>>;
+function choiceParam(input: readonly string[] | Record<string, string>, opts?: ChoiceOptions): Param<string> {
+  if (Array.isArray(input)) {
+    return new StringParam({ ...opts, enum: input });
+  }
+  const entries = Object.entries(input);
+  return new StringParam({
+    ...opts,
+    enum: entries.map(([k]) => k),
+    enumNames: entries.map(([, v]) => v),
+  });
+}
+
 /**
  * Parameter constructors. Each returns a `Param<T>` whose `.ref` emits
  * `${{ parameters.<name> }}` and whose `.toSchema()` is a JSON-Schema fragment.
@@ -570,6 +709,7 @@ export const p = {
     return new BooleanParam(opts);
   },
   enum: enumParam,
+  choice: choiceParam,
   array<T = string>(opts?: ArrayParamOptions<T>): Param<T[]> {
     return new ArrayParam<T>(opts);
   },
