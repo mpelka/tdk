@@ -10,4 +10,4 @@ Add the composed `showWhen` authoring surface (authoring-v2 phase 2, #17): a fie
 
 A `showWhen` controller declared on a different page is rejected with a pointed diagnostic — each wizard page is its own object schema, so a cross-page dependency has no wire form.
 
-Purely additive and value-equivalent: the record form, the single-level `showWhen:` option, and hand-written `dep.*` are unchanged and compile to byte-identical YAML — the synthesiser only activates for the composed forms, and `dep.*` remains the exported low-level layer. No `output-changing:`/`snapshot-affecting:` flag applies.
+Emission-stable vs the previous release: the record form, the single-level `showWhen:` option, and hand-written `dep.*` compile to byte-identical YAML — the synthesiser only activates for the composed forms, and `dep.*` remains the exported low-level layer. One narrow surface change: the public `showWhen` property on `Param` became private (replaced by the same-named `.showWhen(...)` method and the existing `showWhen:` option); no known consumer read it. No `output-changing:`/`snapshot-affecting:` flag applies.
