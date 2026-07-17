@@ -18,12 +18,14 @@
 //     then `jsonata(expression).evaluate(data)` → `{ result }` (roadie's shape).
 //   - every other action's output is an explicit fixture mock when one is given
 //     (specific beats general — see the getActionSimulator branch), else a
+//     per-call simulator (`ExecuteOptions.simulators`), else a process-global
 //     registered action simulator, else undefined.
 //   - a step's `if` (a `${{ }}` boolean) is evaluated; a falsy result skips it.
 
 import jsonataLib from "jsonata";
 import nunjucks from "nunjucks";
 import { parse as parseYaml } from "yaml";
+import type { ActionSimulator } from "./actions.ts";
 import { getActionSimulator } from "./actions.ts";
 import { compileResolved } from "./compile.ts";
 import type { Target, TemplateInput } from "./targets.ts";
@@ -167,7 +169,12 @@ function evalIf(cond: string | boolean | undefined, ctx: Ctx): boolean {
 }
 
 /** Run the engine over a compiled spec (steps + output) for one fixture. */
-async function executeSpec<P>(spec: ExecSpec, fixture: ExecuteFixture<P>, env: Target["env"]): Promise<ExecuteResult> {
+async function executeSpec<P>(
+  spec: ExecSpec,
+  fixture: ExecuteFixture<P>,
+  env: Target["env"],
+  simulators?: Record<string, ActionSimulator>,
+): Promise<ExecuteResult> {
   const ctx: Ctx = {
     parameters: (fixture.parameters as Record<string, unknown>) ?? {},
     secrets: fixture.secrets ?? {},
@@ -233,19 +240,22 @@ async function executeSpec<P>(spec: ExecSpec, fixture: ExecuteFixture<P>, env: T
         output = undefined;
       }
     } else {
-      // Non-pure action (http/provisioning/…). MOCK-WINS: an explicit fixture
-      // mock for this step (`fixture.steps[id].output`) is the author's intent
-      // for THIS scenario — specific beats general — so it takes precedence.
-      // Only when no mock is supplied does a registered action SIMULATOR compute
-      // the output from the rendered input + context (the general model of how
-      // the action behaves). An explicit mock is the only way to test edge/error
-      // shapes a simulator can't produce, and it makes a scenario deterministic
-      // regardless of what's in the process-wide simulator registry.
+      // Non-pure action (http/provisioning/…). MOCK-WINS, with the precedence
+      // most-specific-first: an explicit fixture mock for this step
+      // (`fixture.steps[id].output`) is the author's intent for THIS scenario,
+      // so it wins outright. Otherwise a PER-CALL simulator supplied via
+      // `ExecuteOptions.simulators` — scoped to this one `execute()` call —
+      // beats the process-global registry (`registerActionSimulator`), so a
+      // template can override or supply a simulator for a shared action id
+      // without touching (or being affected by) what any other template
+      // registered for that same id (see actions.ts + issue #10). Only when
+      // neither is present does the global registry run. An explicit mock is
+      // still the only way to test edge/error shapes a simulator can't produce.
       const mock = fixture.steps?.[id];
       if (mock) {
         output = mock.output;
       } else {
-        const sim = getActionSimulator(step.action);
+        const sim = simulators?.[step.action] ?? getActionSimulator(step.action);
         // PARITY: a registered simulator computing a step's output is just as
         // capable of throwing as the roadie jsonata evaluate() above or the
         // BELT input-render try/catch below it — and a broken simulator is
@@ -310,6 +320,20 @@ export interface ExecuteOptions {
    * out-of-enum value fails loudly instead of rendering `undefined`s.
    */
   validateParams?: boolean;
+  /**
+   * Action simulators scoped to THIS `execute()` call, keyed by action id.
+   * Takes precedence over a same-keyed simulator in the process-global
+   * `registerActionSimulator` registry (still subject to an explicit fixture
+   * step mock, which wins over both — see the precedence note in executeSpec).
+   *
+   * `registerActionSimulator` is process-wide: two templates that emit the
+   * same action id share one registry entry, so registering a simulator for
+   * one template's sake can silently shift another template's `execute()`
+   * output/snapshots. Use `simulators` here instead when a simulator should
+   * apply to this call only — e.g. a pack action helper whose id is reused by
+   * several templates, where only one of them wants that `simulate` behaviour.
+   */
+  simulators?: Record<string, ActionSimulator>;
 }
 
 /**
@@ -357,7 +381,7 @@ export async function execute<T extends TemplateInput>(
       );
     }
   }
-  return executeSpec(object.spec as ExecSpec, fixture, target.env);
+  return executeSpec(object.spec as ExecSpec, fixture, target.env, opts.simulators);
 }
 
 /** The per-scenario comparison of a TDK template run vs. its gold-standard run. */

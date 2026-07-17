@@ -81,6 +81,14 @@ registerActionSimulator("bakery:registerOrder", (input) => ({
 For how this precedence plays out in a scenario, see
 [mock-wins precedence](/guide/testing#mock-wins-precedence).
 
+**The registry is process-global**, keyed by action id — two templates that emit the
+same action id share one registered simulator, so registering one for a shared action
+(a pack helper's `defineAction`, say) can silently shift a *different* template's
+`execute()` output/snapshots. When a simulator should apply to one call only, pass it
+via `execute(template, fixture, { simulators: { "bakery:registerOrder": (input) => ({
+… }) } })` instead — a per-call `simulators` entry takes precedence over the global
+registry for that action id (still beaten by an explicit `fixture.steps[id]` mock).
+
 ## A worked example: all three hooks composed
 
 `packages/core/src/__fixtures__/plugin-bakery/` is a synthetic `@tdk/plugin-bakery` —

@@ -85,6 +85,11 @@ simulated action, leave its mock off; to pin a step's output regardless of any
 simulator, supply the mock. This is the one precedence rule to remember when a step
 output is not what you expected.
 
+The full order, most specific first, is: `fixture.steps[id]` mock, then a
+per-call simulator passed via `execute`'s `{ simulators }` option (see
+[Action simulators with `registerActionSimulator`](/guide/extending#action-simulators-with-registeractionsimulator)),
+then the process-global `registerActionSimulator` registry, then `undefined`.
+
 ## Scenarios and snapshots
 
 A testable template is a directory holding `template.ts` and

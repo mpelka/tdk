@@ -715,6 +715,75 @@ describe("execute() — action simulators receive the target env", () => {
   });
 });
 
+// Issue #10: `registerActionSimulator` is process-global, keyed by action id —
+// two templates sharing an action id share one registered simulator, so
+// registering one for a pack's action helper can silently shift a DIFFERENT
+// template's execute() results/snapshots. `ExecuteOptions.simulators` supplies
+// a simulator scoped to ONE `execute()` call, taking precedence over the
+// global registry (still beaten by an explicit fixture step mock — mirrors
+// the existing mock-wins precedence: specific beats general, twice over).
+describe("execute() — per-call simulators (issue #10)", () => {
+  class OvenPipeline extends Template {
+    id = "oven-pipeline-percall";
+    title = "Oven Pipeline (per-call)";
+    type = "service";
+    params = {};
+    build(): Step[] {
+      return [{ id: "check-oven", action: "bakery:ovenCheck", input: {} }];
+    }
+  }
+
+  test("a per-call simulator overrides the global registry for the same action id", async () => {
+    registerActionSimulator("bakery:ovenCheck", () => ({ source: "global" }));
+
+    const { steps } = await execute(
+      new OvenPipeline(),
+      { parameters: {} },
+      { simulators: { "bakery:ovenCheck": () => ({ source: "per-call" }) } },
+    );
+
+    expect(steps["check-oven"]!.output).toEqual({ source: "per-call" });
+  });
+
+  test("a per-call simulator works with no global simulator registered for that action", async () => {
+    // No registerActionSimulator call at all for "bakery:ovenCheck" — the
+    // process-global registry is empty for this action id.
+    const { steps } = await execute(
+      new OvenPipeline(),
+      { parameters: {} },
+      { simulators: { "bakery:ovenCheck": () => ({ source: "per-call-only" }) } },
+    );
+
+    expect(steps["check-oven"]!.output).toEqual({ source: "per-call-only" });
+  });
+
+  test("an explicit fixture step mock still beats a per-call simulator", async () => {
+    registerActionSimulator("bakery:ovenCheck", () => ({ source: "global" }));
+
+    const { steps } = await execute(
+      new OvenPipeline(),
+      { parameters: {}, steps: { "check-oven": { output: { source: "fixture-mock" } } } },
+      { simulators: { "bakery:ovenCheck": () => ({ source: "per-call" }) } },
+    );
+
+    expect(steps["check-oven"]!.output).toEqual({ source: "fixture-mock" });
+  });
+
+  test("an action absent from the per-call map falls through to the global registry", async () => {
+    registerActionSimulator("bakery:ovenCheck", () => ({ source: "global" }));
+
+    // `simulators` is supplied but keys a DIFFERENT action — "bakery:ovenCheck"
+    // itself has no per-call entry, so it must fall through to the registry.
+    const { steps } = await execute(
+      new OvenPipeline(),
+      { parameters: {} },
+      { simulators: { "bakery:someOtherAction": () => ({ source: "unrelated" }) } },
+    );
+
+    expect(steps["check-oven"]!.output).toEqual({ source: "global" });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // TYPE-INFERENCE PROOF — never executed; verified by `tsc --noEmit` (typecheck).
 // `execute` infers the fixture's `parameters` from a defineTemplate result's
