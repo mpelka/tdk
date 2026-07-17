@@ -14,6 +14,7 @@
 
 import type { Ref } from "./define.ts";
 import { env, jsonata, nj, p, raw } from "./index.ts";
+import type { ParamRef } from "./params.ts";
 import type { InputValue } from "./template.ts";
 import type { MarkerValue, TypedInputValue } from "./typed-input.ts";
 
@@ -86,6 +87,32 @@ const okObj: TypedInputValue<{ count: number; label: string }> = { count: jNum, 
 const badObj: TypedInputValue<{ count: number; label: string }> = { count: jNum, label: jNum };
 
 // ---------------------------------------------------------------------------
+// The ParamRef back door stays CLOSED. `.ref`'s public return type is the bare
+// `ParamRef` base; `Ref`'s phantom is REQUIRED so that base satisfies NO
+// `Ref<V>` instantiation. These pins keep the hole shut against refactors —
+// if the phantom ever goes optional again, every line below breaks.
+// ---------------------------------------------------------------------------
+
+// (a) A value statically typed as the bare `ParamRef` is rejected in EVERY
+// typed slot (with an optional phantom it entered them all).
+const bareRef = p.string().ref;
+// @ts-expect-error — a bare ParamRef carries no result type; a number slot rejects it.
+const badBareInNum: TypedInputValue<number> = bareRef;
+// @ts-expect-error — ...and a string slot rejects it too (no any-slot pass).
+const badBareInStr: TypedInputValue<string> = bareRef;
+// @ts-expect-error — ...and a literal-union slot.
+const badBareInEnum: TypedInputValue<"a" | "b"> = bareRef;
+
+// (b) Erasure-by-widening is closed: upcasting a Ref<number> to its ParamRef
+// base must not let it re-enter a mismatched slot.
+const widenedToBase: ParamRef = refNum;
+// @ts-expect-error — the widened base is rejected; a single upcast cannot re-erase.
+const badWidened: TypedInputValue<string> = widenedToBase;
+
+// The loose path still admits the bare ref (compatibility unchanged).
+const looseAcceptsBareRef: InputValue = bareRef;
+
+// ---------------------------------------------------------------------------
 // MarkerValue<M> — recover the type a marker carries (derive's input inference).
 // ---------------------------------------------------------------------------
 
@@ -103,6 +130,10 @@ const exactPickStr: Exact<MarkerValue<PickString>, string> = true;
 type JsonataNumber = typeof jNum;
 type NunjucksString = typeof njStr;
 type PickString = typeof pickStr;
+
+// A bare ParamRef (untyped ref) extracts to `unknown` — the honest
+// author-must-narrow signal, never a silently-guessed type.
+const bareRefExtractsUnknown: Exact<MarkerValue<ParamRef>, unknown> = true;
 
 // The derive use: an `inputs` object maps to its lambda context, field by field.
 type DeriveInputs = { count: Ref<number>; label: Ref<string>; sev: Ref<"low" | "high"> };

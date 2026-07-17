@@ -49,8 +49,17 @@ import { Template } from "./template.ts";
  * The phantom is never present at runtime.
  */
 export interface Ref<T> extends ParamRef {
-  /** Phantom — carries the param's value type. Never read at runtime. */
-  readonly __tdkRefType?: T;
+  /**
+   * Phantom — carries the param's value type. Never present at runtime (every
+   * `Ref` is a cast `ParamRef`; see `bindParameters`). REQUIRED, not optional,
+   * deliberately: with an optional phantom the bare `ParamRef` base — the
+   * public `.ref` getter's return type — was structurally assignable to
+   * `Ref<V>` for EVERY `V` (a missing optional property satisfies every
+   * instantiation), which let an untyped ref through every `TypedInputValue<V>`
+   * slot (issue #15). Required, the bare base matches no instantiation, so only
+   * a genuinely typed `Ref<T>` carries a result type downstream.
+   */
+  readonly __tdkRefType: T;
 }
 
 /** Distribute a union into an intersection (`A | B` → `A & B`). */

@@ -42,8 +42,9 @@ import type { Resolvable } from "./resolve.ts";
  *   - `JsonataExpr` / `NunjucksExpr` — `R` lives only in `fn: (ctx) => R`, and
  *     return types are covariant, so `JsonataExpr<any, number>` is NOT
  *     assignable to `JsonataExpr<any, string>`.
- *   - `Ref<T>` — the phantom `__tdkRefType?: T` differs by `T`, so `Ref<number>`
- *     is not a `Ref<string>`.
+ *   - `Ref<T>` — the REQUIRED phantom `__tdkRefType: T` differs by `T`, so
+ *     `Ref<number>` is not a `Ref<string>` (and the bare `ParamRef` base, which
+ *     lacks the phantom, is no `Ref` at all — see `UntypedInputMarker`).
  *   - `EnvPick<T>` — `values: Record<string, T>` differs by `T`.
  *
  * The `Ctx` of the two expression markers stays `any` on purpose (as the loose
@@ -65,10 +66,17 @@ export type TypedMarker<V> =
  *   - `RawExpr` (`raw\`…\``) — a verbatim Scaffolder string the author owns.
  *   - `Resolvable` (`person("…")`) — resolved to a concrete value at compile.
  *
- * The bare `RawRef` base is deliberately NOT here: `JsonataExpr` / `EnvPick` /
- * `ParamRef` all implement `RawRef`, so admitting it would re-erase every
- * result type this module exists to preserve. A ref used untyped is a bare
- * `Ref<V>` with `V` inferred, not a `RawRef`.
+ * The bare `RawRef` interface is deliberately NOT here: every typed marker
+ * implements it, so admitting it would re-erase the result types this module
+ * exists to preserve. The one structural back door was NOT `RawRef` but the
+ * concrete `ParamRef` class — the public `.ref` getter's return type: while
+ * `Ref`'s phantom was optional, a bare `ParamRef` satisfied `Ref<V>` for EVERY
+ * `V` (a missing optional property matches every instantiation), erasing the
+ * result type this union is built to keep. `Ref.__tdkRefType` is REQUIRED
+ * (define.ts) precisely to close that: the bare base matches no instantiation
+ * and is rejected in every typed slot. `RawRef`-the-interface is separately
+ * blocked: `ParamRef` carries a private member, which makes `Ref` nominal, so
+ * no structural object can pose as a `Ref<V>` either.
  */
 export type UntypedInputMarker = RawExpr | Resolvable;
 
