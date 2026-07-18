@@ -31,10 +31,11 @@
 //     steps:  (f) => [step("place", "bakery:place", { input: { name: f.cakeName } })],
 //   });
 
+import { planDerives } from "./derive.ts";
 import type { NjContext, NunjucksExpr } from "./expr/nunjucks/index.ts";
 import type { ColocatedPage, PageInput } from "./pages.ts";
 import { bindPageNames } from "./pages.ts";
-import type { ParamBase, ParamMap, ParamRef, ShowWhenCondition } from "./params.ts";
+import type { ConditionalBrand, ParamBase, ParamMap, ParamRef, ShowWhenCondition } from "./params.ts";
 import { compileWhenExpr, requireParam } from "./params.ts";
 import type { BuiltForm, InputValue, Lifecycle, LoadContext, PrepareOptions, Step } from "./template.ts";
 import { Template } from "./template.ts";
@@ -85,8 +86,14 @@ type UnionToIntersection<U> = (U extends unknown ? (k: U) => void : never) exten
 /** The precise `Props` map declared inside one (colocated) page. */
 type PropsOf<P> = P extends { properties: infer Props extends ParamMap } ? Props : never;
 
-/** The value type `T` carried by a `Param<T>`. */
-type ParamValueOf<P> = P extends ParamBase<infer T> ? T : never;
+/**
+ * The value type carried by a `Param<T>` field ref — conditionality-aware. A
+ * plain param yields `T`; a param branded `ConditionalBrand` (via the
+ * `.showWhen(...)` method) yields `T | undefined`, because a conditional field can
+ * be absent at runtime. This is what makes a `derive`'s inferred lambda context
+ * force the author to handle a conditional field's absence (ADR-0025 Decision 2).
+ */
+type ParamValueOf<P> = P extends ParamBase<infer T> ? (P extends ConditionalBrand ? T | undefined : T) : never;
 
 /** Merge every page's props into one flat `{ name: Param }` map. */
 type MergedProps<Pages extends readonly unknown[]> = UnionToIntersection<PropsOf<Pages[number]>>;
@@ -353,9 +360,13 @@ class DefinedTemplate<P extends readonly ColocatedPage[] | ParamMap, L> extends 
     // Build the form AS A VALUE — nothing is written to the instance, so two
     // concurrent prepares (test + prod) can never bake each other's data.
     const bound = bindParameters<P>(cfg.parameters(data));
-    const form: BuiltForm = { params: bound.params, pages: bound.pages, steps: cfg.steps(bound.refs) };
     const output = cfg.output?.(bound.refs);
+    // Plan derives on this per-call form, exactly as the static path does in
+    // Template.builtForm (a load() template can use derive too).
+    const { steps, diagnostics } = planDerives(cfg.steps(bound.refs), output);
+    const form: BuiltForm = { params: bound.params, pages: bound.pages, steps };
     if (output) form.output = output;
+    if (diagnostics.length) form.diagnostics = diagnostics;
     return form;
   }
 

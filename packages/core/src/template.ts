@@ -5,6 +5,7 @@
 // `build()` returning steps, and an optional `output`. Compile turns this into a
 // Backstage Template entity, once per deploy target.
 
+import { planDerives } from "./derive.ts";
 import type { EnvPick } from "./env.ts";
 import type { RawExpr, RawRef } from "./expr/index.ts";
 import type { JsonataExpr } from "./expr/jsonata/index.ts";
@@ -106,6 +107,12 @@ export interface BuiltForm {
   steps: Step[];
   /** The `spec.output` map, if any. */
   output?: Record<string, InputValue>;
+  /**
+   * Non-fatal compile diagnostics produced while building the form — e.g. a
+   * declared-but-unreachable `derive`. Surfaced on `CompileResult.diagnostics`;
+   * never affects the emitted YAML. Absent when there is nothing to report.
+   */
+  diagnostics?: string[];
 }
 
 /**
@@ -171,7 +178,13 @@ export abstract class Template {
    */
   builtForm(): BuiltForm {
     this.bindParamNames();
-    return { params: this.params, pages: this.pages, steps: this.build(), output: this.output };
+    // Plan the steps: interleave any reachable `derive(...)` values (as roadie
+    // jsonata steps) with the built manual steps, topologically. A template with
+    // no derives gets its manual steps back unchanged (see `planDerives`).
+    const { steps, diagnostics } = planDerives(this.build(), this.output);
+    const form: BuiltForm = { params: this.params, pages: this.pages, steps, output: this.output };
+    if (diagnostics.length) form.diagnostics = diagnostics;
+    return form;
   }
 
   /**

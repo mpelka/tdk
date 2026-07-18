@@ -1,0 +1,208 @@
+urgent — other problem with detail, rush SLA:
+  steps:
+    ticket-title:
+      input:
+        data:
+          bakeryCode: BK1
+          ovenId: OV-4471
+          severity: urgent
+        expression: '((((severity = "urgent") ? "[URGENT] " : "")) & "Oven " & (ovenId)
+          & " at " & (bakeryCode))'
+      output:
+        result: "[URGENT] Oven OV-4471 at BK1"
+    sla-hours:
+      input:
+        data:
+          severity: urgent
+        expression: |-
+          ((severity = "urgent")
+            ? 4
+            : ((severity = "normal") ? 24 : 72))
+      output:
+        result: 4
+    problem-summary:
+      input:
+        data:
+          problemArea: other
+          otherDetail: Door seal warped, heat escaping
+        expression: |-
+          ((problemArea = "other")
+            ? ($boolean(otherDetail) ? otherDetail : "unspecified")
+            : problemArea)
+      output:
+        result: Door seal warped, heat escaping
+    audit-tag:
+      input:
+        data:
+          bakeryCode: BK1
+          severity: urgent
+        expression: ((bakeryCode) & ":" & (severity))
+      output:
+        result: BK1:urgent
+    oven-lookup:
+      input:
+        asset: OV-4471
+      output:
+        model: Rondo Deck 3
+        installedYear: 2019
+    oven-context:
+      input:
+        data:
+          model: Rondo Deck 3
+          installedYear: 2019
+        expression: ((model) & " (installed " & (installedYear) & ")")
+      output:
+        result: Rondo Deck 3 (installed 2019)
+    register:
+      input:
+        title: "[URGENT] Oven OV-4471 at BK1"
+        slaHours: 4
+        summary: Door seal warped, heat escaping
+        oven: Rondo Deck 3 (installed 2019)
+        site: BK1
+      output:
+        ticketId: TCK-8801
+        url: https://catalog.example/tickets/8801
+  output:
+    title: "[URGENT] Oven OV-4471 at BK1"
+    slaHours: 4
+    ticketId: TCK-8801
+    audit: BK1:urgent
+normal — heating problem, no detail field:
+  steps:
+    ticket-title:
+      input:
+        data:
+          bakeryCode: BK2
+          ovenId: OV-1200
+          severity: normal
+        expression: '((((severity = "urgent") ? "[URGENT] " : "")) & "Oven " & (ovenId)
+          & " at " & (bakeryCode))'
+      output:
+        result: Oven OV-1200 at BK2
+    sla-hours:
+      input:
+        data:
+          severity: normal
+        expression: |-
+          ((severity = "urgent")
+            ? 4
+            : ((severity = "normal") ? 24 : 72))
+      output:
+        result: 24
+    problem-summary:
+      input:
+        data:
+          problemArea: heating
+        expression: |-
+          ((problemArea = "other")
+            ? ($boolean(otherDetail) ? otherDetail : "unspecified")
+            : problemArea)
+      output:
+        result: heating
+    audit-tag:
+      input:
+        data:
+          bakeryCode: BK2
+          severity: normal
+        expression: ((bakeryCode) & ":" & (severity))
+      output:
+        result: BK2:normal
+    oven-lookup:
+      input:
+        asset: OV-1200
+      output:
+        model: Convotherm Mini
+        installedYear: 2022
+    oven-context:
+      input:
+        data:
+          model: Convotherm Mini
+          installedYear: 2022
+        expression: ((model) & " (installed " & (installedYear) & ")")
+      output:
+        result: Convotherm Mini (installed 2022)
+    register:
+      input:
+        title: Oven OV-1200 at BK2
+        slaHours: 24
+        summary: heating
+        oven: Convotherm Mini (installed 2022)
+        site: BK2
+      output:
+        ticketId: TCK-8802
+        url: https://catalog.example/tickets/8802
+  output:
+    title: Oven OV-1200 at BK2
+    slaHours: 24
+    ticketId: TCK-8802
+    audit: BK2:normal
+low — conveyor problem, no detail field:
+  steps:
+    ticket-title:
+      input:
+        data:
+          bakeryCode: BK3
+          ovenId: OV-0007
+          severity: low
+        expression: '((((severity = "urgent") ? "[URGENT] " : "")) & "Oven " & (ovenId)
+          & " at " & (bakeryCode))'
+      output:
+        result: Oven OV-0007 at BK3
+    sla-hours:
+      input:
+        data:
+          severity: low
+        expression: |-
+          ((severity = "urgent")
+            ? 4
+            : ((severity = "normal") ? 24 : 72))
+      output:
+        result: 72
+    problem-summary:
+      input:
+        data:
+          problemArea: conveyor
+        expression: |-
+          ((problemArea = "other")
+            ? ($boolean(otherDetail) ? otherDetail : "unspecified")
+            : problemArea)
+      output:
+        result: conveyor
+    audit-tag:
+      input:
+        data:
+          bakeryCode: BK3
+          severity: low
+        expression: ((bakeryCode) & ":" & (severity))
+      output:
+        result: BK3:low
+    oven-lookup:
+      input:
+        asset: OV-0007
+      output:
+        model: Rack Master 60
+        installedYear: 2015
+    oven-context:
+      input:
+        data:
+          model: Rack Master 60
+          installedYear: 2015
+        expression: ((model) & " (installed " & (installedYear) & ")")
+      output:
+        result: Rack Master 60 (installed 2015)
+    register:
+      input:
+        title: Oven OV-0007 at BK3
+        slaHours: 72
+        summary: conveyor
+        oven: Rack Master 60 (installed 2015)
+        site: BK3
+      output:
+        ticketId: TCK-8803
+        url: https://catalog.example/tickets/8803
+  output:
+    title: Oven OV-0007 at BK3
+    slaHours: 72
+    ticketId: TCK-8803
+    audit: BK3:low

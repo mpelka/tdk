@@ -107,6 +107,23 @@ export class ShowWhenAny {
 /** One authored predicate: a single condition or an `any(...)` OR of conditions. */
 export type ShowWhenPredicate = ShowWhenCondition | ShowWhenAny;
 
+/**
+ * A phantom brand marking a `Param` as CONDITIONAL — it carries a `showWhen`, so
+ * its value can be absent at runtime. The `.showWhen(...)` METHOD returns a
+ * branded param; `ParamValueOf` (define.ts) reads the brand and types the field's
+ * ref as `T | undefined`, which flows into a `derive`'s inferred context and
+ * forces the lambda to handle absence (ADR-0025 Decision 2). Never present at
+ * runtime — every branded param is the same instance, cast.
+ *
+ * The brand attaches to the `.showWhen(...)` method only. The `showWhen:`
+ * CONSTRUCTOR OPTION reveals the field at runtime identically but does NOT brand
+ * the type (a `p.string({ showWhen })` stays `Param<string>`); use the method for
+ * conditionality-aware derive typing, or annotate the ref.
+ */
+export interface ConditionalBrand {
+  readonly __tdkConditional: true;
+}
+
 /** A `showWhen` authored either as the record form or as ref-based predicate(s). */
 export type ShowWhenInput = ShowWhen | ShowWhenPredicate | ShowWhenPredicate[];
 
@@ -561,8 +578,11 @@ export abstract class Param<T> {
    * not a copy) so it drops straight into a page's `properties`. Throws if a
    * condition was already set (via the option or a prior call) — a field's
    * visibility is declared once, in one place.
+   *
+   * Returns the SAME instance, branded `ConditionalBrand` at the type level so a
+   * `derive` reading this field's ref sees `T | undefined` (ADR-0025 Decision 2).
    */
-  showWhen(condition: ShowWhenInput): this {
+  showWhen(condition: ShowWhenInput): this & ConditionalBrand {
     if (this._showWhen !== undefined) {
       throw new Error(
         "showWhen is already set on this param — declare a field's visibility once, as either the " +
@@ -570,7 +590,7 @@ export abstract class Param<T> {
       );
     }
     this._showWhen = condition;
-    return this;
+    return this as this & ConditionalBrand;
   }
 
   /**
