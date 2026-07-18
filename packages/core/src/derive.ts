@@ -22,7 +22,7 @@ import { isRawExpr, isRawRef } from "./expr/index.ts";
 import type { JsonataExpr } from "./expr/jsonata/index.ts";
 import { jsonata } from "./expr/jsonata/index.ts";
 import type { ConditionalBrand } from "./params.ts";
-import { ParamBase } from "./params.ts";
+import { ParamBase, ParamRef } from "./params.ts";
 import { isResolvable } from "./resolve.ts";
 import type { InputValue, Step } from "./template.ts";
 import type { MarkerValue } from "./typed-input.ts";
@@ -51,6 +51,30 @@ export interface DeriveMarker<R> extends RawRef {
 }
 
 /**
+ * The keys that can never be sub-refs, excluded from `DeriveSubRefs` so reaching
+ * one is a COMPILE error (matching the runtime, which returns `undefined` for
+ * the reserved set and the marker's own member for `render`/`toString`):
+ *   - `render` / `toString` — the marker's own members (returned as themselves),
+ *   - `then` / `catch` / `finally` — a sub-ref here would make a handle look
+ *     thenable and break `await`,
+ *   - `toJSON` / `valueOf` / `constructor` / `prototype` — serialization and
+ *     object internals a runtime probes,
+ *   - every `__`-prefixed key — TDK marker flags (`__tdkJsonataExpr`, …) must
+ *     read `undefined`, never a truthy sub-ref.
+ */
+type ReservedSubRefKey =
+  | "render"
+  | "toString"
+  | "then"
+  | "catch"
+  | "finally"
+  | "toJSON"
+  | "valueOf"
+  | "constructor"
+  | "prototype"
+  | `__${string}`;
+
+/**
  * The typed sub-refs an OBJECT-typed handle exposes: one handle per property, so
  * `jira.summary` is a handle to `steps['jira'].output.result.summary` carrying
  * that property's type. Optional properties are unwrapped (`NonNullable`) — a
@@ -61,15 +85,21 @@ export interface DeriveMarker<R> extends RawRef {
  *   - Arrays expose NO per-element sub-refs — the whole array handle is used (an
  *     index signature has no finite key set to map). `R` an array → no sub-refs.
  *   - Scalars have no sub-refs.
- *   - A property whose name collides with a marker member (`render`, `toString`,
- *     or any `__tdk*`/`then`/`toJSON`/`valueOf`/`constructor`) is not reachable as
- *     a sub-ref — those keys return the marker's own member. Such keys are
- *     vanishingly rare in Backstage step outputs.
+ *   - A property named by `ReservedSubRefKey` is NOT reachable as a sub-ref: the
+ *     type omits it (a compile error), and the runtime returns `undefined`
+ *     (reserved keys) or the marker's own member (`render`/`toString`). Such
+ *     keys are vanishingly rare in Backstage step outputs.
+ *   - A sub-ref segment must be a plain identifier (`/^[A-Za-z_$][\w$]*$/`) —
+ *     any other key THROWS at access time (see `makeHandle`), because the
+ *     segment is spliced into the emitted `${{ … }}` path.
+ *   - Enumeration is asymmetric: `'a' in handle` is `false` and `Object.keys`
+ *     exposes only the marker members — sub-refs exist on ACCESS, not as own
+ *     properties (the Proxy fabricates them in the `get` trap).
  */
 type DeriveSubRefs<R> = R extends readonly unknown[]
   ? unknown
   : R extends object
-    ? { readonly [K in keyof R]-?: DeriveHandle<NonNullable<R[K]>> }
+    ? { readonly [K in Exclude<keyof R, ReservedSubRefKey>]-?: DeriveHandle<NonNullable<R[K]>> }
     : unknown;
 
 /**
@@ -116,8 +146,10 @@ interface HandleInfo {
  * registry, mirroring the env / action-simulator registries: process-wide, with
  * a `_resetDeriveRegistry` reset for tests. It backs a BEST-EFFORT diagnostic
  * only — the compiler never depends on it for correctness (an unreachable derive
- * is simply not emitted). In a process that compiles several templates, reset
- * between them for a precise warning set.
+ * is simply not emitted). The warning is ATTRIBUTED per template: a compile only
+ * reports an unreachable derive whose param inputs all belong to ITS OWN form
+ * (see `attributableToForm`), so one template's orphan never surfaces in another
+ * template's diagnostics.
  */
 const declaredDerives = new Set<DeriveDescriptor>();
 
@@ -150,10 +182,22 @@ function renderHandle(descriptor: DeriveDescriptor, path: readonly string[]): st
 }
 
 /**
+ * The shape a sub-ref path segment must have: a plain identifier. Every segment
+ * is spliced verbatim into the emitted `${{ steps['…'].output.result.<seg> }}`
+ * path, so an unconstrained key could BREAK OUT of the expression (a key holding
+ * `'] }} … {{ '` would terminate the block and open another — injection). The
+ * check runs at sub-ref CREATION (the `get` trap), so the bad key fails at the
+ * access site, not at some later render.
+ */
+const SUBREF_SEGMENT = /^[A-Za-z_$][\w$]*$/;
+
+/**
  * Build a handle Proxy over a real `RawRef` target. Known members resolve to the
  * target; an unknown data-like string key yields a SUB-REF handle with the path
- * extended (`jira.summary` → a handle to `.result.summary`). See `DeriveSubRefs`
- * for the limits this trap enforces.
+ * extended (`jira.summary` → a handle to `.result.summary`) — after validating
+ * the key against `SUBREF_SEGMENT` (a non-identifier key THROWS: it would be
+ * spliced into the emitted expression path). See `DeriveSubRefs` for the limits
+ * this trap enforces.
  */
 function makeHandle<R>(descriptor: DeriveDescriptor, path: readonly string[]): DeriveHandle<R> {
   const target = {
@@ -172,6 +216,14 @@ function makeHandle<R>(descriptor: DeriveDescriptor, path: readonly string[]): D
       if (typeof prop === "symbol") return Reflect.get(t, prop, receiver);
       if (OWN_MEMBERS.has(prop)) return Reflect.get(t, prop, receiver);
       if (prop.startsWith("__") || RESERVED_KEYS.has(prop)) return undefined;
+      if (!SUBREF_SEGMENT.test(prop)) {
+        throw new Error(
+          `derive "${descriptor.name}": sub-ref key ${JSON.stringify(prop)} is not a plain identifier — ` +
+            `a sub-ref segment is spliced into the emitted \${{ }} path, so only ` +
+            `[A-Za-z_$][A-Za-z0-9_$]* keys are allowed. Reshape the derive's return to use an ` +
+            `identifier key, or read the value with an explicit nj() expression instead.`,
+        );
+      }
       return makeHandle(descriptor, [...path, prop]);
     },
     // A handle is opaque data — refuse mutation so a stray write can't corrupt it.
@@ -220,7 +272,9 @@ export type DeriveInputs = Record<string, unknown>;
  * The value type one derive input contributes to the lambda's context —
  * conditionality-aware:
  *   - a param CONST (`Param<T>`) → `T`, or `T | undefined` when it carries a
- *     `showWhen` (branded `ConditionalBrand` by the `.showWhen(...)` method),
+ *     `showWhen` (branded `ConditionalBrand` — by the `.showWhen(...)` method's
+ *     return type, or by the `showWhen:`-carrying overload of each `p.*`
+ *     factory),
  *   - anything else (a `Ref<T>` field ref, a derive handle, `nj`/`jsonata`, a
  *     literal) → the value its marker carries (`MarkerValue`). A conditional
  *     field's ref is already `Ref<T | undefined>`, so both spellings agree.
@@ -326,9 +380,11 @@ function extractStepIds(source: string): string[] {
 /**
  * A marker whose rendered string may carry a `steps[...]` reference: `nj`,
  * `jsonata`, a param ref, or a `raw` expression — all render env-INDEPENDENTLY.
- * An `env.pick`/resolver marker is a per-env or deferred VALUE that never names a
- * step, and rendering it against a placeholder env would resolve (and can throw),
- * so those are skipped for reference extraction.
+ * An `env.pick`/resolver marker is NOT one: a resolver defers to compile time
+ * and never names a step; an env.pick's BRANCHES may hold step-referencing
+ * markers, but the pick itself must never be rendered against a placeholder env
+ * (it would resolve, and can throw) — the walks descend into `pick.values`
+ * instead (see `forEachHandle` / `depsOf`).
  */
 function isRenderableRef(value: unknown): value is RawRef {
   return (isRawRef(value) || isRawExpr(value)) && !isEnvPick(value) && !isResolvable(value);
@@ -337,8 +393,12 @@ function isRenderableRef(value: unknown): value is RawRef {
 /**
  * Walk a value tree, invoking `onHandle` for each derive handle (NOT descending
  * into its sub-refs — they share one descriptor). Used to find reachable derives.
- * Leaf markers (`nj`/`jsonata`/refs/`env.pick`/resolvers) contain no nested
- * handle objects, so they are not descended into.
+ * Leaf markers (`nj`/`jsonata`/refs/resolvers) contain no nested handle objects,
+ * so they are not descended into — EXCEPT `env.pick`, whose branches are
+ * arbitrary values: every branch is walked (the union over all envs), so a
+ * handle inside any env's branch is reachable in every env's artifact.
+ * Conservative on purpose — an extra emitted step in an env that does not pick
+ * that branch is harmless; a missing step in one that does is a broken artifact.
  */
 function forEachHandle(value: unknown, onHandle: (info: HandleInfo) => void): void {
   const info = handleInfo(value);
@@ -347,6 +407,10 @@ function forEachHandle(value: unknown, onHandle: (info: HandleInfo) => void): vo
     return;
   }
   if (value instanceof ParamBase) return; // a bare param — renders to its own ref
+  if (isEnvPick(value)) {
+    for (const branch of Object.values(value.values)) forEachHandle(branch, onHandle);
+    return;
+  }
   if (isRawRef(value) || isRawExpr(value) || isResolvable(value)) return;
   if (Array.isArray(value)) {
     for (const v of value) forEachHandle(v, onHandle);
@@ -409,11 +473,19 @@ function depsOf(inputs: unknown[], reachable: Map<string, DeriveDescriptor>, man
       return;
     }
     if (value instanceof ParamBase) return; // a bare param — renders to its own ref
+    if (isEnvPick(value)) {
+      // Descend into EVERY branch (the union over all envs): a branch holding a
+      // step-referencing marker contributes its ordering edge in every env's
+      // artifact. Conservative ordering is correct ordering — an edge from an
+      // unpicked branch can only move a step earlier, never break a reference.
+      for (const branch of Object.values(value.values)) scan(branch);
+      return;
+    }
     if (isRenderableRef(value)) {
       for (const id of extractStepIds(value.render({ env: "" }))) classify(id);
       return;
     }
-    if (isRawRef(value) || isRawExpr(value) || isResolvable(value)) return; // env.pick / resolver — no step ref
+    if (isRawRef(value) || isRawExpr(value) || isResolvable(value)) return; // resolver — no step ref
     if (Array.isArray(value)) {
       for (const v of value) scan(v);
       return;
@@ -424,6 +496,50 @@ function depsOf(inputs: unknown[], reachable: Map<string, DeriveDescriptor>, man
   };
   for (const input of inputs) scan(input);
   return { derives, steps };
+}
+
+/**
+ * Collect every `ParamRef` instance in a value tree — the identity trail the
+ * unreachable-derive warning is attributed by. A param's `.ref` is memoized
+ * (one instance per param), so the ref inside a derive's inputs IS the ref in
+ * the owning template's field map — identity, not name, ties them.
+ */
+function collectParamRefs(value: unknown, into: Set<ParamRef>): void {
+  if (value instanceof ParamRef) {
+    into.add(value);
+    return;
+  }
+  if (isDeriveHandle(value)) return; // another derive's inputs are attributed on their own
+  if (isEnvPick(value)) {
+    for (const branch of Object.values(value.values)) collectParamRefs(branch, into);
+    return;
+  }
+  if (isRawRef(value) || isRawExpr(value) || isResolvable(value)) return;
+  if (Array.isArray(value)) {
+    for (const v of value) collectParamRefs(v, into);
+    return;
+  }
+  if (value && typeof value === "object") {
+    for (const v of Object.values(value as Record<string, unknown>)) collectParamRefs(v, into);
+  }
+}
+
+/**
+ * Whether an unreachable derive belongs to THIS template's form: every param ref
+ * among its inputs is one of the form's own refs (object identity — see
+ * `collectParamRefs`). A derive naming a foreign param is another template's,
+ * so it is skipped here (that template's own compile reports it). A derive
+ * naming NO params cannot be attributed and stays vacuously true — warned by
+ * every compiling template, deliberately: ambiguous-but-loud beats a silent
+ * drop (the ADR's silent-to-loud rule).
+ */
+function attributableToForm(d: DeriveDescriptor, ownRefs: ReadonlySet<unknown>): boolean {
+  const refs = new Set<ParamRef>();
+  for (const input of Object.values(d.inputs)) collectParamRefs(input, refs);
+  for (const ref of refs) {
+    if (!ownRefs.has(ref)) return false;
+  }
+  return true;
 }
 
 /**
@@ -554,8 +670,17 @@ function topoOrder(manualSteps: Step[], reachable: Map<string, DeriveDescriptor>
  * unchanged (byte-for-byte), so existing emission is untouched. A declared but
  * unreachable derive is EXCLUDED from emission with a loud diagnostic (returned
  * in `diagnostics`, surfaced on `CompileResult.diagnostics`).
+ *
+ * `ownRefs` — the compiling template's own param `.ref` instances — scopes the
+ * unreachable warning to THIS template's derives (see `attributableToForm`), so
+ * a multi-template process never cross-contaminates diagnostics. Omitted (a
+ * direct caller), every unreachable derive is reported.
  */
-export function planDerives(manualSteps: Step[], output?: Record<string, unknown>): PlanResult {
+export function planDerives(
+  manualSteps: Step[],
+  output?: Record<string, unknown>,
+  ownRefs?: ReadonlySet<unknown>,
+): PlanResult {
   const roots: unknown[] = [];
   for (const step of manualSteps) {
     if (step.input !== undefined) roots.push(step.input);
@@ -565,16 +690,17 @@ export function planDerives(manualSteps: Step[], output?: Record<string, unknown
 
   const reachable = collectReachable(roots);
 
-  // The unreachable-derive warning: any declared derive not reached from a root.
-  // Best-effort (process-registry — see `declaredDerives`); never affects the YAML.
+  // The unreachable-derive warning: any declared derive not reached from a root,
+  // attributed to this template by its param refs. Best-effort (process-registry
+  // — see `declaredDerives`); never affects the YAML.
   const diagnostics: string[] = [];
   for (const d of declaredDerives) {
-    if (!reachable.has(d.name)) {
-      diagnostics.push(
-        `derive "${d.name}" is declared but not reachable from any step input, step \`if\`, or the ` +
-          `output — it is NOT emitted. Reference its handle where the value is needed, or remove it.`,
-      );
-    }
+    if (reachable.has(d.name)) continue;
+    if (ownRefs && !attributableToForm(d, ownRefs)) continue; // another template's derive
+    diagnostics.push(
+      `derive "${d.name}" is declared but not reachable from any step input, step \`if\`, or the ` +
+        `output — it is NOT emitted. Reference its handle where the value is needed, or remove it.`,
+    );
   }
 
   // No derives → the manual steps are the plan, untouched.

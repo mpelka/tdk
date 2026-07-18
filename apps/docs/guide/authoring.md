@@ -345,9 +345,11 @@ const problemSummary = derive("problem-summary", { problemArea, otherDetail }, (
 );
 ```
 
-The type only carries the `| undefined` when you attach the condition with the
-`.showWhen(...)` method. The `showWhen:` constructor option reveals the field the
-same way at runtime, but leaves the type as `T`.
+Both ways of attaching the condition carry the `| undefined`: the
+`.showWhen(...)` method and the `showWhen:` option. One caveat: the option only
+carries it when you pass the options inline. An options object that travels
+through a variable whose type has `showWhen` optional still reveals the field at
+runtime, but types as `T` — pass the options inline, or use the method.
 
 ### Sub-refs — reading one field of an object-typed value
 
@@ -359,10 +361,18 @@ const jira = derive("jira", { ... }, (i) => ({ summary: "...", id: "..." }));
 // jira.summary → ${{ steps['jira'].output.result.summary }}, typed as its field
 ```
 
-Sub-refs work one property at a time on object results. Arrays expose no
-per-element sub-ref — use the whole array handle. A property whose name is a
-marker member (`render`, `toString`, or a `__tdk` name) is not reachable as a
-sub-ref.
+Sub-refs work one property at a time on object results, with these limits:
+
+- arrays expose no per-element sub-ref — use the whole array handle
+- a property named `render`, `toString`, `then`, `catch`, `finally`, `toJSON`,
+  `valueOf`, `constructor`, `prototype`, or any `__`-prefixed name is not
+  reachable as a sub-ref — the type omits it, so reaching one is a compile error
+- a sub-ref key must be a plain identifier (letters, digits, `_`, `$`, not
+  starting with a digit) — the key is spliced into the emitted `${{ }}` path, so
+  any other key throws at the access site
+- enumeration is asymmetric: `'a' in handle` is `false` and `Object.keys` lists
+  only the marker's own members — sub-refs exist on access, not as own
+  properties
 
 ### How the steps are ordered
 
@@ -394,6 +404,12 @@ Backstage run log, title-cased: `"sla-hours"` becomes `Sla Hours`. Pass a
 ```ts
 derive("sla-hours", { severity }, (i) => ..., { name: "Work out the support SLA" });
 ```
+
+### Testing a derived value
+
+In `execute()` scenarios, a fixture mock on a derive's step id is ignored —
+`roadiehq:utils:jsonata` steps always evaluate their expression directly. Mock
+the derive's inputs instead: the upstream steps and parameters it reads.
 
 ## Multi-page forms and conditional dependencies
 

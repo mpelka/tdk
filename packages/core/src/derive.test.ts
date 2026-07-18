@@ -1,12 +1,13 @@
 // Runtime + compile tests for `derive` (ADR-0025 Decision 2, phase 3a): the
 // generated roadie steps, topological planning, auto-wiring, the three loud
-// conditions (cycle, duplicate name, unreachable warning), and cross-template
-// independence.
+// conditions (cycle, duplicate name, unreachable warning), cross-template
+// independence, sub-ref injection guarding, and env.pick edge collection.
 
 import { beforeEach, describe, expect, test } from "bun:test";
 import { compile } from "./compile.ts";
 import { defineTemplate, step } from "./define.ts";
 import { _resetDeriveRegistry, derive, getDeriveExpr, isDeriveHandle } from "./derive.ts";
+import { env } from "./env.ts";
 import { nj } from "./expr/nunjucks/index.ts";
 import { p } from "./params.ts";
 
@@ -218,5 +219,126 @@ describe("derive — cross-template independence", () => {
     expect(b.spec.steps.find((s) => s.id === "shared")?.action).toBe("roadiehq:utils:jsonata");
     expect(a.metadata.name).toBe("tpl-a");
     expect(b.metadata.name).toBe("tpl-b");
+  });
+
+  test("one template's orphan derive does not surface in another template's diagnostics", () => {
+    // Template A declares a reachable derive and an ORPHAN, both reading A's
+    // param. Template B (its own params, no derives) must compile with CLEAN
+    // diagnostics — A's orphan is attributed to A by ref identity, and only A's
+    // compile reports it.
+    const xA = p.string();
+    const usedA = derive("used-a", { xA }, (i) => i.xA);
+    derive("orphan-a", { xA }, (i) => `${i.xA}!`);
+    const tplA = defineTemplate({
+      id: "attr-a",
+      title: "A",
+      type: "service",
+      parameters: { xA },
+      steps: () => [step("log", "debug:log", { input: { v: usedA } })],
+    });
+    const xB = p.string();
+    const tplB = defineTemplate({
+      id: "attr-b",
+      title: "B",
+      type: "service",
+      parameters: { xB },
+      steps: (f) => [step("log", "debug:log", { input: { v: f.xB } })],
+    });
+    const a = compile(tplA, target);
+    const b = compile(tplB, target);
+    // A's own compile names its orphan…
+    expect(a.diagnostics).toBeDefined();
+    expect(a.diagnostics!.some((d) => d.includes('"orphan-a"'))).toBe(true);
+    // …and B's compile is clean: neither A's orphan nor A's used derive leaks.
+    expect(b.diagnostics).toBeUndefined();
+  });
+});
+
+describe("derive — sub-ref key validation (injection guard)", () => {
+  test("a non-identifier sub-ref key throws at access, naming the derive and the key", () => {
+    const n = p.number();
+    const h = derive("guarded", { n }, (i) => ({ label: `n=${i.n}` }));
+    const probe = h as unknown as Record<string, unknown>;
+    // The breakout probe: a key that would terminate the ${{ }} block and open
+    // another — must throw at ACCESS, never reach the emitted expression.
+    const probes = [
+      "x'] }} injected {{ '", // the expression-breakout probe
+      "a}}b", // closes the interpolation block
+      "a b", // whitespace
+      "a\nb", // newline
+      "🎂", // non-identifier unicode
+      "it's", // a quote
+      "0", // digit-leading (not a Nunjucks dot-path segment)
+    ];
+    for (const key of probes) {
+      expect(() => probe[key]).toThrow(/not a plain identifier/);
+      expect(() => probe[key]).toThrow('"guarded"');
+    }
+    // A plain identifier key still sub-refs.
+    expect(String(h.label)).toBe("${{ steps['guarded'].output.result.label }}");
+  });
+});
+
+describe("derive — env.pick inputs contribute planning edges", () => {
+  test("a step reference inside ANY env.pick branch orders the derive after that step, in every env", () => {
+    // The verifier's probe shape: the derive's input is an env.pick whose
+    // branches read DIFFERENT manual steps per env. The planner must union the
+    // branches, so the derive lands after BOTH steps in BOTH artifacts —
+    // conservative ordering is correct ordering.
+    const seed = p.string();
+    const picked = derive(
+      "picked",
+      {
+        v: env.pick({
+          test: nj((c) => c.steps["step-a"].output.v),
+          prod: nj((c) => c.steps["step-b"].output.v),
+        }),
+      },
+      (i) => `v=${i.v}`,
+    );
+    const tpl = defineTemplate({
+      id: "envpick-edges",
+      title: "EnvPick Edges",
+      type: "service",
+      parameters: { seed },
+      steps: (f) => [
+        step("step-a", "svc:a", { input: { s: f.seed } }),
+        step("step-b", "svc:b", { input: { s: f.seed } }),
+        step("use", "debug:log", { input: { v: picked } }),
+      ],
+    });
+    for (const envName of ["test", "prod"]) {
+      const { object } = compile(tpl, { env: envName, outDir: "" }, { checkEnvSafety: false });
+      const order = object.spec.steps.map((s) => s.id);
+      // Both referenced steps precede the derive; the derive precedes its consumer.
+      expect(order.indexOf("step-a")).toBeLessThan(order.indexOf("picked"));
+      expect(order.indexOf("step-b")).toBeLessThan(order.indexOf("picked"));
+      expect(order.indexOf("picked")).toBeLessThan(order.indexOf("use"));
+      // The emitted data holds the env's OWN branch.
+      const data = (object.spec.steps.find((s) => s.id === "picked")!.input as { data: Record<string, string> }).data;
+      expect(data.v).toBe(envName === "test" ? '${{ steps["step-a"].output.v }}' : '${{ steps["step-b"].output.v }}');
+    }
+  });
+
+  test("a derive handle inside an env.pick branch is reachable (emitted) in every env", () => {
+    const seed = p.string();
+    const inner = derive("inner", { seed }, (i) => `#${i.seed}`);
+    const tpl = defineTemplate({
+      id: "envpick-reach",
+      title: "EnvPick Reach",
+      type: "service",
+      parameters: { seed },
+      steps: () => [
+        step("log", "debug:log", {
+          input: { v: env.pick({ test: inner, prod: "literal" }) },
+        }),
+      ],
+    });
+    for (const envName of ["test", "prod"]) {
+      const { object } = compile(tpl, { env: envName, outDir: "" }, { checkEnvSafety: false });
+      // The union makes `inner` reachable in BOTH envs — a missing step in the
+      // env that picks the handle branch would be a broken artifact.
+      expect(object.spec.steps.map((s) => s.id)).toContain("inner");
+    }
   });
 });

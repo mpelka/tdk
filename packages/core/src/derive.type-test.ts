@@ -62,6 +62,61 @@ type PageRefs = FieldRefs<[typeof condPage]>;
 const exactPageRefs: Exact<PageRefs, { detail: Ref<string | undefined>; plain: Ref<string> }> = true;
 
 // ---------------------------------------------------------------------------
+// The `showWhen:` OPTION brands too — both authoring forms carry
+// `ConditionalBrand`, so an option-form conditional also types `T | undefined`
+// (the branded overload fires when the options literally carry a showWhen).
+// ---------------------------------------------------------------------------
+
+const detailOpt = p.string({ title: "Detail", showWhen: area.is("other") });
+type OptCtx = DeriveContext<{ detailOpt: typeof detailOpt }>;
+const exactOptCtx: Exact<OptCtx, { detailOpt: string | undefined }> = true;
+// @ts-expect-error — i.detailOpt is `string | undefined`; an unguarded method call errors.
+const badOptCtx = derive("bad-opt", { detailOpt }, (i) => i.detailOpt.toUpperCase());
+
+// Every factory's option form brands: choice / enum (both call shapes) /
+// boolean / number / array / customField.
+const condChoice = p.choice(["a", "b"], { showWhen: area.is("other") });
+const condEnum = p.enum(["x", "y"], { showWhen: area.is("other") });
+const condEnumObj = p.enum({ enum: ["x", "y"], showWhen: area.is("other") });
+const condBool = p.boolean({ showWhen: area.is("other") });
+const condNum = p.number({ showWhen: area.is("other") });
+const condArr = p.array({ showWhen: area.is("other") });
+const condCustom = p.customField({ uiField: "OvenPicker", showWhen: area.is("other") });
+type AllCondCtx = DeriveContext<{
+  c: typeof condChoice;
+  e: typeof condEnum;
+  eo: typeof condEnumObj;
+  b: typeof condBool;
+  n: typeof condNum;
+  a: typeof condArr;
+}>;
+const exactAllCondCtx: Exact<
+  AllCondCtx,
+  {
+    c: "a" | "b" | undefined;
+    e: "x" | "y" | undefined;
+    eo: "x" | "y" | undefined;
+    b: boolean | undefined;
+    n: number | undefined;
+    a: string[] | undefined;
+  }
+> = true;
+// customField is Param<unknown>, so `unknown | undefined` collapses to `unknown`.
+type CustomCondCtx = DeriveContext<{ cf: typeof condCustom }>;
+const exactCustomCondCtx: Exact<CustomCondCtx, { cf: unknown }> = true;
+
+// A PLAIN options object (no showWhen) stays unbranded — no spurious undefined.
+const plainOpt = p.string({ title: "Plain" });
+type PlainOptCtx = DeriveContext<{ plainOpt: typeof plainOpt }>;
+const exactPlainOptCtx: Exact<PlainOptCtx, { plainOpt: string }> = true;
+
+// The option form threads into `f` exactly like the method form does.
+const optPage = page("P2", { detailOpt, areaOpt: p.choice(["heating", "other"]) });
+type OptPageRefs = FieldRefs<[typeof optPage]>;
+const exactOptPageRefs: Exact<OptPageRefs, { detailOpt: Ref<string | undefined>; areaOpt: Ref<"heating" | "other"> }> =
+  true;
+
+// ---------------------------------------------------------------------------
 // The handle — a result-typed marker.
 // ---------------------------------------------------------------------------
 
@@ -94,3 +149,24 @@ const exactChained: Exact<MarkerValue<typeof chained>, string> = true;
 
 // A DeriveMarker<V> extracts to V (the marker-only view, no sub-refs).
 const exactDeriveMarker: Exact<MarkerValue<DeriveMarker<boolean>>, boolean> = true;
+
+// ---------------------------------------------------------------------------
+// Reserved keys are OMITTED from sub-refs — the type matches the runtime, which
+// returns `undefined` (reserved set) or the marker's own member (render /
+// toString). Reaching one is a COMPILE error, not a silent undefined.
+// ---------------------------------------------------------------------------
+
+const reservedObj = derive("reserved", { c: refNum }, (i) => ({
+  summary: `n=${i.c}`,
+  then: "t",
+  toJSON: "j",
+  render: "r",
+}));
+// A non-reserved sibling still sub-refs normally.
+const okReservedSibling: TypedInputValue<string> = reservedObj.summary;
+// @ts-expect-error — `then` is reserved (a sub-ref here would make the handle thenable).
+const badThenSubRef = reservedObj.then;
+// @ts-expect-error — `toJSON` is reserved (serialization probes must see undefined).
+const badToJsonSubRef = reservedObj.toJSON;
+// `render` is the MARKER's member, not a sub-ref — its type is the render method.
+const renderIsMarkerMember: Exact<(typeof reservedObj)["render"], DeriveMarker<unknown>["render"]> = true;

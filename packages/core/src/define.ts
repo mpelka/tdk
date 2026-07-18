@@ -38,7 +38,7 @@ import { bindPageNames } from "./pages.ts";
 import type { ConditionalBrand, ParamBase, ParamMap, ParamRef, ShowWhenCondition } from "./params.ts";
 import { compileWhenExpr, requireParam } from "./params.ts";
 import type { BuiltForm, InputValue, Lifecycle, LoadContext, PrepareOptions, Step } from "./template.ts";
-import { Template } from "./template.ts";
+import { collectFormParamRefs, Template } from "./template.ts";
 
 // ---------------------------------------------------------------------------
 // Typed field refs.
@@ -362,8 +362,10 @@ class DefinedTemplate<P extends readonly ColocatedPage[] | ParamMap, L> extends 
     const bound = bindParameters<P>(cfg.parameters(data));
     const output = cfg.output?.(bound.refs);
     // Plan derives on this per-call form, exactly as the static path does in
-    // Template.builtForm (a load() template can use derive too).
-    const { steps, diagnostics } = planDerives(cfg.steps(bound.refs), output);
+    // Template.builtForm (a load() template can use derive too). The bound
+    // form's param refs scope the unreachable-derive warning to this template.
+    const ownRefs = collectFormParamRefs(bound.params, bound.pages);
+    const { steps, diagnostics } = planDerives(cfg.steps(bound.refs), output, ownRefs);
     const form: BuiltForm = { params: bound.params, pages: bound.pages, steps };
     if (output) form.output = output;
     if (diagnostics.length) form.diagnostics = diagnostics;

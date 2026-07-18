@@ -109,20 +109,30 @@ export type ShowWhenPredicate = ShowWhenCondition | ShowWhenAny;
 
 /**
  * A phantom brand marking a `Param` as CONDITIONAL — it carries a `showWhen`, so
- * its value can be absent at runtime. The `.showWhen(...)` METHOD returns a
- * branded param; `ParamValueOf` (define.ts) reads the brand and types the field's
- * ref as `T | undefined`, which flows into a `derive`'s inferred context and
- * forces the lambda to handle absence (ADR-0025 Decision 2). Never present at
- * runtime — every branded param is the same instance, cast.
+ * its value can be absent at runtime. `ParamValueOf` (define.ts) reads the brand
+ * and types the field's ref as `T | undefined`, which flows into a `derive`'s
+ * inferred context and forces the lambda to handle absence (ADR-0025 Decision 2).
+ * Never present at runtime — every branded param is the same instance, cast.
  *
- * The brand attaches to the `.showWhen(...)` method only. The `showWhen:`
- * CONSTRUCTOR OPTION reveals the field at runtime identically but does NOT brand
- * the type (a `p.string({ showWhen })` stays `Param<string>`); use the method for
- * conditionality-aware derive typing, or annotate the ref.
+ * BOTH authoring forms brand: the `.showWhen(...)` method (its return type), and
+ * the `showWhen:` constructor option (a branded overload on each `p.*` factory,
+ * selected when the options argument carries a `showWhen` key). One conservative
+ * gap: an options object passed through an intermediate variable whose TYPE has
+ * `showWhen` merely optional selects the unbranded overload — the field still
+ * reveals conditionally at runtime, but types as `T`. Pass the options inline,
+ * or use the method, for conditionality-aware typing.
  */
 export interface ConditionalBrand {
   readonly __tdkConditional: true;
 }
+
+/** An options object that definitely carries a `showWhen` — selects the branded overload. */
+interface HasShowWhen {
+  showWhen: ShowWhenInput;
+}
+
+/** The branded param type the `showWhen`-carrying overloads return. */
+type ConditionalParam<T> = Param<T> & ConditionalBrand;
 
 /** A `showWhen` authored either as the record form or as ref-based predicate(s). */
 export type ShowWhenInput = ShowWhen | ShowWhenPredicate | ShowWhenPredicate[];
@@ -794,6 +804,11 @@ export interface CustomFieldOptions extends BaseParamOptions<unknown> {
  * (the overloads reject it beside an options object), but a JS caller who
  * passes both anyway gets them merged, the options object winning.
  *
+ * Either form's options carrying a `showWhen` returns the param BRANDED
+ * `ConditionalBrand`, so its value types as `T | undefined` downstream (in
+ * `f`, and in a `derive`'s inferred context) — same as the `.showWhen(...)`
+ * method.
+ *
  * ```ts
  * p.enum(["Low", "High"]);                                  // values only
  * p.enum(["Low", "High"], { title: "Priority", required: true });
@@ -801,7 +816,12 @@ export interface CustomFieldOptions extends BaseParamOptions<unknown> {
  * p.enum({ enum: ["L", "H"], enumNames: ["Low", "High"] }); // full object form
  * ```
  */
+function enumParam<const V extends string>(
+  values: readonly V[],
+  extra: Omit<EnumParamOptions<V>, "enum"> & HasShowWhen,
+): ConditionalParam<V>;
 function enumParam<const V extends string>(values: readonly V[], extra?: Omit<EnumParamOptions<V>, "enum">): Param<V>;
+function enumParam<const V extends string>(opts: EnumParamOptions<V> & HasShowWhen): ConditionalParam<V>;
 function enumParam<const V extends string>(opts: EnumParamOptions<V>): Param<V>;
 function enumParam<const V extends string>(
   opts: readonly V[] | EnumParamOptions<V>,
@@ -831,12 +851,23 @@ export type ChoiceOptions = Omit<StringParamOptions, "enum" | "enumNames">;
  * the object form's key union flows into the returned `Param<V>`, so
  * `.is()`/`.in()` and fixture `parameters` literal-check against them.
  *
+ * Options carrying a `showWhen` return the param BRANDED `ConditionalBrand`
+ * (typed `T | undefined` downstream), same as the `.showWhen(...)` method.
+ *
  * ```ts
  * p.choice(["deck", "convection", "rack"], { title: "Oven type", required: true });
  * p.choice({ BK1: "Riverside", BK2: "Old Town" }, { title: "Bakery site" });
  * ```
  */
+function choiceParam<const V extends string>(
+  values: readonly V[],
+  opts: ChoiceOptions & HasShowWhen,
+): ConditionalParam<V>;
 function choiceParam<const V extends string>(values: readonly V[], opts?: ChoiceOptions): Param<V>;
+function choiceParam<const O extends Record<string, string>>(
+  labels: O,
+  opts: ChoiceOptions & HasShowWhen,
+): ConditionalParam<Extract<keyof O, string>>;
 function choiceParam<const O extends Record<string, string>>(
   labels: O,
   opts?: ChoiceOptions,
@@ -853,44 +884,70 @@ function choiceParam(input: readonly string[] | Record<string, string>, opts?: C
   });
 }
 
+// Each scalar factory is declared as an overload PAIR: options that definitely
+// carry a `showWhen` select the branded `ConditionalParam<T>` return (so the
+// field types `T | undefined` downstream), plain options the unbranded one —
+// mirroring what the `.showWhen(...)` method's return type does.
+
+function stringParam(opts: StringParamOptions & HasShowWhen): ConditionalParam<string>;
+function stringParam(opts?: StringParamOptions): Param<string>;
+function stringParam(opts?: StringParamOptions): Param<string> {
+  return new StringParam(opts);
+}
+
+function numberParam(opts: NumberParamOptions & HasShowWhen): ConditionalParam<number>;
+function numberParam(opts?: NumberParamOptions): Param<number>;
+function numberParam(opts?: NumberParamOptions): Param<number> {
+  return new NumberParam(opts);
+}
+
+function booleanParam(opts: BooleanParamOptions & HasShowWhen): ConditionalParam<boolean>;
+function booleanParam(opts?: BooleanParamOptions): Param<boolean>;
+function booleanParam(opts?: BooleanParamOptions): Param<boolean> {
+  return new BooleanParam(opts);
+}
+
+function arrayParam<T = string>(opts: ArrayParamOptions<T> & HasShowWhen): ConditionalParam<T[]>;
+function arrayParam<T = string>(opts?: ArrayParamOptions<T>): Param<T[]>;
+function arrayParam<T = string>(opts?: ArrayParamOptions<T>): Param<T[]> {
+  return new ArrayParam<T>(opts);
+}
+
+/**
+ * Generic custom-field escape hatch. Emits `ui:field` (from `uiField`) and
+ * `ui:options` (from `uiOptions`) verbatim — e.g. `CakePickerWithDefault`.
+ *
+ * ```ts
+ * p.customField({
+ *   title: "Cake Code", required: true,
+ *   uiField: "CakePickerWithDefault",
+ *   uiOptions: { path: "bakery-catalog/...", valueSelector: "metadata.name" },
+ * });
+ * ```
+ */
+function customFieldParam(opts: CustomFieldOptions & HasShowWhen): ConditionalParam<unknown>;
+function customFieldParam(opts: CustomFieldOptions): Param<unknown>;
+function customFieldParam(opts: CustomFieldOptions): Param<unknown> {
+  // buildSchema already emits ui:field (from uiField), ui:options, and the
+  // field-level errorMessage; pass errorMessage on so the required message lifts.
+  const schema = buildSchema(opts.type ?? "string", opts, []);
+  return new CustomParam<unknown>(schema, opts.required, opts.showWhen, opts.errorMessage);
+}
+
 /**
  * Parameter constructors. Each returns a `Param<T>` whose `.ref` emits
  * `${{ parameters.<name> }}` and whose `.toSchema()` is a JSON-Schema fragment.
+ * Options carrying a `showWhen` return the param branded `ConditionalBrand`
+ * (typed `T | undefined` downstream) — see each factory's overloads.
  */
 export const p = {
-  string(opts?: StringParamOptions): Param<string> {
-    return new StringParam(opts);
-  },
-  number(opts?: NumberParamOptions): Param<number> {
-    return new NumberParam(opts);
-  },
-  boolean(opts?: BooleanParamOptions): Param<boolean> {
-    return new BooleanParam(opts);
-  },
+  string: stringParam,
+  number: numberParam,
+  boolean: booleanParam,
   enum: enumParam,
   choice: choiceParam,
-  array<T = string>(opts?: ArrayParamOptions<T>): Param<T[]> {
-    return new ArrayParam<T>(opts);
-  },
-
-  /**
-   * Generic custom-field escape hatch. Emits `ui:field` (from `uiField`) and
-   * `ui:options` (from `uiOptions`) verbatim — e.g. `CakePickerWithDefault`.
-   *
-   * ```ts
-   * p.customField({
-   *   title: "Cake Code", required: true,
-   *   uiField: "CakePickerWithDefault",
-   *   uiOptions: { path: "bakery-catalog/...", valueSelector: "metadata.name" },
-   * });
-   * ```
-   */
-  customField(opts: CustomFieldOptions): Param<unknown> {
-    // buildSchema already emits ui:field (from uiField), ui:options, and the
-    // field-level errorMessage; pass errorMessage on so the required message lifts.
-    const schema = buildSchema(opts.type ?? "string", opts, []);
-    return new CustomParam<unknown>(schema, opts.required, opts.showWhen, opts.errorMessage);
-  },
+  array: arrayParam,
+  customField: customFieldParam,
 };
 
 /** A map of param name → Param. The shape a Template's `params` field takes. */
