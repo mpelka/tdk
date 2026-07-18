@@ -330,7 +330,7 @@ reference for you:
     slaHours: ${{ steps['sla-hours'].output.result }}
 ```
 
-You never write the `${{ steps['sla-hours'].output.result }}` string, and you
+You never write the <code v-pre>${{ steps['sla-hours'].output.result }}</code> string, and you
 never write the `data:` map twice. Compare this with the hand-written form in
 [decision 2 of ADR-0025](/guide/decisions/0025-authoring-v2-dataflow-model),
 which states the same fields as a type and again as data.
@@ -384,7 +384,7 @@ Sub-refs work one property at a time on object results, with these limits:
   `valueOf`, `constructor`, `prototype`, or any `__`-prefixed name is not
   reachable as a sub-ref — the type omits it, so reaching one is a compile error
 - a sub-ref key must be a plain identifier (letters, digits, `_`, `$`, not
-  starting with a digit) — the key is spliced into the emitted `${{ }}` path, so
+  starting with a digit) — the key is spliced into the emitted <code v-pre>${{ }}</code> path, so
   any other key throws at the access site
 - enumeration is asymmetric: `'a' in handle` is `false` and `Object.keys` lists
   only the marker's own members — sub-refs exist on access, not as own

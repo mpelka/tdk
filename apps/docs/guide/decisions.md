@@ -10,9 +10,9 @@ Superseded-by. The number and the text of the old record stay as they were.
 
 The records below are grouped by area: the core and language, the toolchain, and the VS
 Code extension. Most are recorded retrospectively — they capture decisions that predate
-the record — and are marked accepted. One looks forward:
-[ADR 25, authoring v2](/guide/decisions/0025-authoring-v2-dataflow-model) is the design
-the next implementation phases build against, and it is still proposed.
+the record — and are marked accepted. One looks forward and is still proposed:
+[ADR 26, the migration model and printer](/guide/decisions/0026-migration-model-and-printer)
+is the spec that issue #13's implementation builds against.
 
 This page is a companion to the [stability contract](/guide/stability), which records the
 promises TDK makes. The three-verb vocabulary the records use — transpile, compile,
@@ -35,6 +35,7 @@ execute — is defined in the contributor guide.
 | 0022 | 2026-06-29 | [Functional defineTemplate over class](/guide/decisions/0022-functional-definetemplate-over-class) | Accepted |
 | 0024 | 2026-06-29 | [The load() shape: env-aware, parameters-only](/guide/decisions/0024-load-shape-env-aware-parameters-only) | Accepted |
 | 0025 | 2026-07-18 | [Authoring v2: the dataflow model](/guide/decisions/0025-authoring-v2-dataflow-model) | Accepted |
+| 0026 | 2026-07-18 | [The migration model and printer](/guide/decisions/0026-migration-model-and-printer) | Proposed |
 
 ## Toolchain
 
