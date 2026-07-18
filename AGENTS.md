@@ -36,7 +36,8 @@ Run these from the repo root:
 - `bun install` — link the workspace
 - `bun test` — run every package's tests
 - `bun run typecheck` — typecheck all packages (`--filter '*'`)
-- `bun run ci` — the full gate (typecheck + tests + scenario snapshots); the exact command CI runs
+- `bun run ci` — the full gate (typecheck + docs build + tests + scenario snapshots); the
+  exact command CI runs
 - `tdk build` / `tdk compile <template.ts>` / `tdk execute <template.ts>` — the CLI (see
   `apps/cli`)
 - `tdk init [dir]` — scaffold a testable bakery template

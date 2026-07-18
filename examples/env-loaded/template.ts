@@ -6,7 +6,7 @@
 // are module-scope consts, but this template's `featuredFlavour` enum is built from
 // the awaited `load()` data (`parameters: (data) => …`), which only the v1 config
 // shape expresses. So env-loaded (and its sibling api-loaded) stay v1 until the v2
-// surface grows a loader (ADR-0025 phase 4, #19). It still uses the v2 SUGAR it can.
+// surface grows a loader (ADR-0025 phase 4, #31). It still uses the v2 SUGAR it can.
 //
 // This template proves TDK's per-env compile is env-SAFE by construction:
 //   - `load({ env })` fetches the seasonal menu at COMPILE time (a stub client

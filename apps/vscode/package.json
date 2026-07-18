@@ -2,7 +2,7 @@
   "name": "tdk-vscode",
   "displayName": "TDK — Template Development Kit",
   "description": "Author, preview, and test Backstage Scaffolder templates written with @tdk/core.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "license": "Apache-2.0",
   "publisher": "tdk",
