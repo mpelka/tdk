@@ -288,30 +288,41 @@ describe("a controller on a DIFFERENT page is rejected at compile", () => {
   });
 });
 
-describe("any(...) is showWhen vocabulary — step()'s when: rejects it loudly", () => {
-  // `when?:` types only ShowWhenCondition (an any() there is a TS error); this
-  // pins the RUNTIME guard an untyped caller hits. The two layers reject for
-  // DIFFERENT reasons — the schema cannot express a cross-field OR at all,
-  // while a step condition compiles to Nunjucks (which can) and is merely not
-  // wired yet — so the message says "not yet", not "impossible".
-  test("when: any(...) throws the pinned diagnostic (runtime guard)", () => {
+describe("any(...) in step().when: compiles to a Nunjucks `or` (issue #24)", () => {
+  // The DELIBERATE asymmetry with showWhen: a step condition compiles to Nunjucks
+  // (which has `or`), so a cross-field OR IS expressible here — unlike the schema
+  // layer, which still rejects it (a JSON-Schema dependency keys off one field).
+  test("when: any(a, b) across different fields → `(a) or (b)`", () => {
     const size = p.enum(["S", "L"], { title: "Size" });
+    const topping = p.enum(["jam", "cream"], { title: "Topping" });
     size.setName("size");
-    const pred = any(size.is("L")) as unknown as import("./params.ts").ShowWhenCondition;
-    expect(() => step("notify", "debug:log", { when: pred })).toThrow(
-      "when(...) does not accept any(...) — pass field.is(...)/.in([...]) conditions, or all(...) of " +
-        "them. An OR on ONE field is that field's .in([...]). (A cross-field OR in a step condition is " +
-        "expressible in Nunjucks but not wired into when(...) yet — a deliberate follow-up.)",
-    );
+    topping.setName("topping");
+    const s = step("notify", "debug:log", { when: any(size.is("L"), topping.is("jam")) });
+    expect(s.if).toBe('${{ (parameters.size == "L") or (parameters.topping == "jam") }}');
   });
 
-  test("when: all(..., any(...)) hits the same guard", () => {
+  test("when: all(x, any(y, z)) nests → `(x) and ((y) or (z))`", () => {
     const size = p.enum(["S", "L"], { title: "Size" });
     const kind = p.enum(["cake", "bun"], { title: "Kind" });
     size.setName("size");
     kind.setName("kind");
-    const preds = all(kind.is("cake"), any(size.is("L"))) as unknown as import("./params.ts").ShowWhenCondition[];
-    expect(() => step("notify", "debug:log", { when: preds })).toThrow(/when\(\.\.\.\) does not accept any\(\.\.\.\)/);
+    const s = step("notify", "debug:log", { when: all(kind.is("cake"), any(size.is("S"), size.is("L"))) });
+    expect(s.if).toBe('${{ (parameters.kind == "cake") and ((parameters.size == "S") or (parameters.size == "L")) }}');
+  });
+
+  test("the schema layer STILL rejects a cross-field any(...) — the asymmetry stands", () => {
+    // showWhen keeps rejecting a cross-field OR (see the "cross-field any(...)"
+    // suite above): the form cannot express it, only the step condition can.
+    const size = p.enum(["S", "L"], { title: "Size" });
+    const topping = p.enum(["jam", "cream"], { title: "Topping" });
+    const tpl = defineTemplate({
+      id: "asym",
+      title: "Asym",
+      type: "service",
+      parameters: [page("P", { size, topping, note: p.string().showWhen(any(size.is("L"), topping.is("jam"))) })],
+      steps: () => [step("noop", "debug:log", { input: { x: "y" } })],
+    });
+    expect(() => compile(tpl, { env: "test", outDir: "" })).toThrow(/mixes different fields/);
   });
 });
 

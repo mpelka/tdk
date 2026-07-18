@@ -63,6 +63,17 @@ type-check against it.
 | `output` | `spec.output` | optional `(f) => Record<string, InputValue>` |
 | `load` | — | optional compile-time data loader; then `parameters` is `(data) => form` |
 
+There is a second, **additive** shape — the v2 dataflow surface — that declares `effects:`
+instead of `steps:`, `pages:` instead of `parameters:`, and a plain `output:` map. See
+[Authoring v2](#authoring-v2-effects-pages-as-toc-handle-outputs). A config may use one
+shape or the other, never both at once.
+
+| Field (v2) | Maps to | Notes |
+| --- | --- | --- |
+| `pages` | `spec.parameters` | an array of `page(title, props)`; per-page `ui:order` is inferred from source order |
+| `effects` | `spec.steps` | reachability roots; steps (effects + referenced derives) are collected and ordered |
+| `output` | `spec.output` | a plain `Record<string, InputValue>` of handles/sub-refs/refs/literals |
+
 Under the hood `defineTemplate` returns an internal `Template` (the base model).
 Authors use `defineTemplate` — never `class extends Template` — because the
 functional form is the supported authoring surface.
@@ -107,9 +118,14 @@ step("notify-oncall", "debug:log", {
 - `field.is(v)` compiles to `==`.
 - `field.in(a, b)` compiles to the Nunjucks `in` operator.
 - `all(c1, c2)` compiles to `and`, each condition in its own parentheses.
-- `any(...)` is not accepted here — an OR on one field is that field's
-  `.in([...])`. (`any` is `showWhen` vocabulary; passing it to `when` is a type
-  error, and throws at compile.)
+- `any(c1, c2)` compiles to `or`, each condition in its own parentheses — and a
+  **cross-field** OR is allowed here (a step condition is Nunjucks, which has `or`).
+  `all(x, any(y, z))` nests as `(x) and ((y) or (z))`.
+
+This is a **deliberate asymmetry** with a field's `showWhen`: the form still rejects a
+cross-field `any(...)` (a JSON-Schema dependency keys off one controller — the wire
+cannot express it), but the step condition can (issue #24). Same vocabulary, two
+layers; only `any(...)` spanning different fields differs.
 
 This is the desugared equivalent, written by hand:
 
@@ -410,6 +426,131 @@ derive("sla-hours", { severity }, (i) => ..., { name: "Work out the support SLA"
 In `execute()` scenarios, a fixture mock on a derive's step id is ignored —
 `roadiehq:utils:jsonata` steps always evaluate their expression directly. Mock
 the derive's inputs instead: the upstream steps and parameters it reads.
+
+## Authoring v2 — effects, pages-as-TOC, handle outputs
+
+The v2 surface authors a template as a **dataflow graph of module-scope values**
+([ADR-0025](/guide/decisions/0025-authoring-v2-dataflow-model)). Fields, derives and
+effects are `const`s that reference each other; the template declares its `pages`, its
+`effects`, and its `output`, and the compiler collects and orders the steps. It is
+**additive** — the v1 `{ parameters, steps }` shape still compiles, byte-for-byte
+unchanged. Here is the whole shape (the `examples/oven-support-v2` flagship):
+
+```ts
+import { defineTemplate, derive, p, page } from "@tdk/core";
+import { raiseTicket } from "./plugin.ts"; // a pack effect helper (below)
+
+// Fields — module-scope consts, each with its own visibility.
+const bakeryCode = p.choice({ BK1: "Riverside", BK2: "Old Town" }, { title: "Bakery site", required: true });
+const ovenId = p.string({ title: "Oven asset ID", required: true });
+const severity = p.choice({ low: "Low", normal: "Normal", urgent: "Urgent" }, { title: "Severity", required: true });
+const problemArea = p.choice(["heating", "controls", "other"], { title: "Problem area", required: true });
+const otherDetail = p.string({ title: "Describe the problem" }).showWhen(problemArea.is("other"));
+
+// Derives — computed values (see the section above).
+const ticketTitle = derive("ticket-title", { bakeryCode, ovenId, severity }, (i) =>
+  `${i.severity === "urgent" ? "[URGENT] " : ""}Oven ${i.ovenId} at ${i.bakeryCode}`,
+);
+const problemSummary = derive("problem-summary", { problemArea, otherDetail }, (i) =>
+  i.problemArea === "other" ? i.otherDetail || "unspecified" : i.problemArea,
+);
+
+// One effect — a pack helper returning a typed handle.
+const ticket = raiseTicket("open-oven-ticket", {
+  title: ticketTitle,
+  summary: problemSummary,
+  site: bakeryCode,
+  oven: ovenId,
+});
+
+export default defineTemplate({
+  id: "oven-support-request-v2",
+  title: "Request oven support",
+  type: "service",
+  pages: [
+    page("Oven and site", { bakeryCode, ovenId }),
+    page("The problem", { severity, problemArea, otherDetail }),
+  ],
+  effects: [ticket],
+  output: {
+    ticketUrl: ticket.output.body.url,
+    ticketId: ticket.output.body.id,
+  },
+});
+```
+
+### `pages:` — the ordered table of contents
+
+`pages` is the same `page(title, props)` map form as v1's `parameters`, and it stays the
+params' name-binding site. In a v2 template each page's **`ui:order` is inferred** from
+its map's insertion order and emitted explicitly (so RJSF's field order is pinned to the
+authored TOC). Conditional (`showWhen`) fields live in `dependencies`, not the base
+`properties`, so they are not listed in `ui:order`. Pass an explicit `uiOrder` on a page
+to override the inference. (v1 templates never infer — their emission is unchanged.)
+
+### `effect(id, action, opts)` — a side-effectful step with a typed handle
+
+An **effect** wraps an action step and returns a typed handle. `handle.output` is a
+reference rooted at <code v-pre>${{ steps['&lt;id&gt;'].output }}</code>; navigating it
+(`ticket.output.body.url`) renders the full path and carries the field's type, so a
+wrong-typed use squiggles. The output shape is the handle's type parameter — a pack helper
+declares it once:
+
+```ts
+// examples/oven-support-v2/plugin.ts — the effect-helper pattern packs will use.
+import { effect, type EffectHandle, type InputValue, registerActionSimulator } from "@tdk/core";
+
+interface TicketOutput { body: { url: string; id: string } }
+
+// A defineAction-STYLE factory: it wraps effect(...), pins the action id + output
+// shape, and registers the execute() simulator at import (exactly as defineAction's
+// `simulate` does). Consumers get a typed EffectHandle<TicketOutput> back.
+registerActionSimulator("bakery:raise-ticket", (input) => ({
+  body: { id: `TCK-${input.oven}`, url: `https://catalog.example/tickets/TCK-${input.oven}` },
+}));
+
+export function raiseTicket(id: string, args: { title: InputValue; summary: InputValue; site: InputValue; oven: InputValue }): EffectHandle<TicketOutput> {
+  return effect<TicketOutput>(id, "bakery:raise-ticket", { name: "Raise the ticket", input: args });
+}
+```
+
+`opts` is `{ input?, name?, when?, if?, after? }`. Bare param consts in `input` normalize
+to their `.ref` (like `derive`). `.when(pred)` / `when:` accepts the same predicates as a
+step's `when` (`field.is`, `all(...)`, `any(...)`), compiled to `if:` — so an effect can be
+conditional: `notify.when(severity.is("urgent"))`.
+
+### `effects:` — the reachability roots
+
+`effects` is the list of reachability roots. The compiler collects the steps — **every
+effect, plus every `derive` transitively referenced by an effect's input, `if`, or the
+`output`** — and orders them: **data-dependency first** (one effect reading another's
+output, or an effect reading a derive), then **effects-list declaration order** for peers
+with no data dependency. An `after:` hint (or the fluent `.after(...)`) states an
+order-only edge that overrides declaration order:
+
+```ts
+const notify = effect("notify", "svc:notify", { input: { … } }).after(ticket); // runs after `ticket`
+```
+
+The sharp edges match `derive`: a duplicate name errors, a cycle errors, and a
+declared-but-unreachable derive warns (never dropped in silence). A v2 template declares
+`effects:` and **must not** also declare `steps:`/`parameters:` — that both-shapes-at-once
+mistake is a type error, and a loud runtime throw.
+
+### `output:` — a plain map of handles
+
+In v2 `output` is a plain object (not a function of `f`), because the fields are
+module-scope consts. It reads effect and derive outputs **by handle** —
+`ticket.output.body.url`, a `derive` handle directly — so no
+<code v-pre>${{ steps[...] }}</code> string is written by hand. `output` is also a
+reachability root: a derive referenced only by `output` is still collected.
+
+### `rawEffect(step)` — the escape hatch
+
+Anything the `effect(...)` sugar can't express — a step from a v1-style `defineAction`
+helper, a hand-built object, an unusual input shape — wraps as an effect with
+`rawEffect(step)`. The step keeps its id/action/input/if verbatim; the type parameter
+types its `.output`. It drops straight into the `effects:` list.
 
 ## Multi-page forms and conditional dependencies
 

@@ -1,0 +1,181 @@
+# HAND-WRITTEN ORACLE — the Oven Support Request (AUTHORING-V2 shape) as a Backstage
+# expert would author it by hand, from the behavioural spec, BEFORE the template was
+# compiled. This is the SAME behaviour as the phase-3a oven-support example, now
+# authored through the v2 surface — pages-as-TOC (with inferred ui:order), an
+# `effects:` list, and handle-based `output`. The three `roadiehq:utils:jsonata` steps
+# are the derived values `derive(...)` generates; each JSONata below is written in its
+# own idiomatic layout (NOT copied from the transpiler). The submit step
+# (`open-oven-ticket`) is the EFFECT — a plain action step wrapped by a pack helper —
+# whose output the template `output` reads by handle. The tests assert value-for-value
+# agreement across fixtures (execute keys steps by id, so a differing JSONata layout
+# proves behavioural equivalence, never byte-equality).
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: oven-support-request-v2
+  title: Request oven support (v2)
+  description: Raise an oven-support ticket, assembling its fields from the submitted form.
+  tags:
+    - bakery
+    - oven
+    - support
+spec:
+  type: service
+  owner: team-bakery
+  parameters:
+    - title: Oven and site
+      properties:
+        bakeryCode:
+          type: string
+          title: Bakery site
+          enumNames:
+            - Riverside
+            - Old Town
+            - Harbourfront
+          enum:
+            - BK1
+            - BK2
+            - BK3
+        ovenId:
+          type: string
+          title: Oven asset ID
+        ovenType:
+          type: string
+          title: Oven type
+          enum:
+            - deck
+            - convection
+            - rack
+      required:
+        - bakeryCode
+        - ovenId
+        - ovenType
+      # ui:order is INFERRED from the page map's insertion order (v2 surface).
+      ui:order:
+        - bakeryCode
+        - ovenId
+        - ovenType
+    - title: The problem
+      properties:
+        severity:
+          type: string
+          title: Severity
+          enumNames:
+            - Low
+            - Normal
+            - Urgent
+          enum:
+            - low
+            - normal
+            - urgent
+        problemArea:
+          type: string
+          title: Problem area
+          enum:
+            - heating
+            - conveyor
+            - controls
+            - other
+      required:
+        - severity
+        - problemArea
+      # Conditional fields (otherDetail, urgentReason) live in `dependencies`, NOT in
+      # the base `properties`, so ui:order names only the base fields.
+      ui:order:
+        - severity
+        - problemArea
+      dependencies:
+        problemArea:
+          oneOf:
+            - properties:
+                problemArea:
+                  const: heating
+            - properties:
+                problemArea:
+                  const: conveyor
+            - properties:
+                problemArea:
+                  const: controls
+            - properties:
+                problemArea:
+                  const: other
+                otherDetail:
+                  type: string
+                  title: Describe the problem
+        severity:
+          oneOf:
+            - properties:
+                severity:
+                  const: low
+            - properties:
+                severity:
+                  const: normal
+            - properties:
+                severity:
+                  const: urgent
+                urgentReason:
+                  type: string
+                  title: Why is this urgent?
+    - title: Contact
+      properties:
+        contactEmail:
+          type: string
+          title: Who should we update?
+          format: email
+      required:
+        - contactEmail
+      ui:order:
+        - contactEmail
+  steps:
+    # 1. The ticket title — flag urgency, then name the oven and the site.
+    - id: ticket-title
+      name: Ticket Title
+      action: roadiehq:utils:jsonata
+      input:
+        data:
+          bakeryCode: ${{ parameters.bakeryCode }}
+          ovenId: ${{ parameters.ovenId }}
+          severity: ${{ parameters.severity }}
+        expression: |
+          (severity = "urgent" ? "[URGENT] " : "")
+            & "Oven " & ovenId & " at " & bakeryCode
+    # 2. The support SLA, in hours, by severity.
+    - id: sla-hours
+      name: Sla Hours
+      action: roadiehq:utils:jsonata
+      input:
+        data:
+          severity: ${{ parameters.severity }}
+        expression: |
+          severity = "urgent" ? 4 : (severity = "normal" ? 24 : 72)
+    # 3. The problem summary — `otherDetail` is only present for "other"; fall back to
+    #    "unspecified" when the conditional field is absent.
+    - id: problem-summary
+      name: Problem Summary
+      action: roadiehq:utils:jsonata
+      input:
+        data:
+          problemArea: ${{ parameters.problemArea }}
+          otherDetail: ${{ parameters.otherDetail }}
+        expression: |
+          problemArea = "other"
+            ? (otherDetail ? otherDetail : "unspecified")
+            : problemArea
+    # 4. THE EFFECT — raise the ticket, consuming the derived values by handle and the
+    #    fields directly. `urgentReason` is optional, so it defaults to "".
+    - id: open-oven-ticket
+      name: Raise the oven-support ticket
+      action: bakery:raise-ticket
+      input:
+        title: ${{ steps['ticket-title'].output.result }}
+        slaHours: ${{ steps['sla-hours'].output.result }}
+        summary: ${{ steps['problem-summary'].output.result }}
+        site: ${{ parameters.bakeryCode }}
+        oven: ${{ parameters.ovenId }}
+        ovenType: ${{ parameters.ovenType }}
+        urgentReason: ${{ parameters.urgentReason | default("") }}
+        contact: ${{ parameters.contactEmail }}
+  # The template output reads the effect's output BY HANDLE — ticket.output.body.*.
+  output:
+    ticketUrl: ${{ steps['open-oven-ticket'].output.body.url }}
+    ticketId: ${{ steps['open-oven-ticket'].output.body.id }}

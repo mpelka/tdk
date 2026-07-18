@@ -32,10 +32,12 @@
 //   });
 
 import { planDerives } from "./derive.ts";
+import type { EffectHandle } from "./effects.ts";
+import { effectAfterEdges, effectToStep } from "./effects.ts";
 import type { NjContext, NunjucksExpr } from "./expr/nunjucks/index.ts";
 import type { ColocatedPage, PageInput } from "./pages.ts";
 import { bindPageNames } from "./pages.ts";
-import type { ConditionalBrand, ParamBase, ParamMap, ParamRef, ShowWhenCondition } from "./params.ts";
+import type { ConditionalBrand, ParamBase, ParamMap, ParamRef, ShowWhenPredicate } from "./params.ts";
 import { compileWhenExpr, requireParam } from "./params.ts";
 import type { BuiltForm, InputValue, Lifecycle, LoadContext, PrepareOptions, Step } from "./template.ts";
 import { collectFormParamRefs, Template } from "./template.ts";
@@ -148,14 +150,15 @@ export interface StepOptions {
   if?: Step["if"];
   /**
    * Sugar for `if:` (ADR-0025 §5) — a typed predicate, the SAME shape
-   * `showWhen` accepts: `field.is(v)`, `field.in(...)`, or `all(...)` to AND
-   * several. Compiles to the Nunjucks boolean `${{ … }}` string `if:` needs —
-   * `.is(v)` → `==`, `.in(...)` → the Nunjucks `in` operator, `all(...)` →
-   * `and` — see `compileWhenExpr` (params.ts) for the exact emission. Giving
+   * `showWhen` accepts: `field.is(v)`, `field.in(...)`, `all(...)` to AND, or
+   * `any(...)` to OR. Compiles to the Nunjucks boolean `${{ … }}` string `if:`
+   * needs — `.is(v)` → `==`, `.in(...)` → the Nunjucks `in` operator, `all(...)`
+   * → `and`, `any(...)` → `or` (a cross-field OR is allowed in a step condition,
+   * unlike `showWhen` — issue #24) — see `compileWhenExpr` (params.ts). Giving
    * both `if` and `when` throws: `when` IS sugar for `if`, so authoring both
    * is either redundant or a silent last-one-wins bug waiting to happen.
    */
-  when?: ShowWhenCondition | ShowWhenCondition[];
+  when?: ShowWhenPredicate | ShowWhenPredicate[];
 }
 
 /**
@@ -260,6 +263,33 @@ export interface DefineTemplateConfigWithLoad<P extends readonly ColocatedPage[]
 type AnyDefineTemplateConfig<P extends readonly ColocatedPage[] | ParamMap, L> =
   | DefineTemplateConfig<P>
   | DefineTemplateConfigWithLoad<P, L>;
+
+/**
+ * The AUTHORING-V2 `defineTemplate` config (ADR-0025 Decision 4) — additive
+ * alongside the v1 `{ parameters, steps }` shape (both compile; existing
+ * templates are byte-unchanged). Fields are module-scope consts, so `steps`/
+ * `output` need no `f` closure:
+ *   - `pages` — the ordered table of contents AND the params' name-binding site
+ *     (the same `page(title, props)` map form). Each page's `ui:order` is
+ *     INFERRED from its map's insertion order (emitted explicitly so RJSF
+ *     ordering is pinned), unless the page passes an explicit `uiOrder`.
+ *   - `effects` — the reachability roots. Steps are collected from every effect
+ *     plus every `derive`/lookup transitively referenced; the planner orders them
+ *     data-dependency first, then declaration order for peers, then `after:`.
+ *   - `output` — a PLAIN map (not a function): handles, sub-refs, refs, literals,
+ *     which render lazily at compile.
+ *
+ * A v2 config declares `effects:` and MUST NOT also declare `steps:`/`parameters:`
+ * (both-shapes-at-once is rejected — a type error, and a loud runtime throw).
+ */
+export interface DefineTemplateV2Config<P extends readonly ColocatedPage[]> extends DefineTemplateBase {
+  /** The ordered form pages — TOC + name-binding site (colocated `page(...)`). */
+  pages: P;
+  /** The effects: reachability roots alongside `output` (see `effect(...)`). */
+  effects: ReadonlyArray<EffectHandle<unknown>>;
+  /** Optional `spec.output` — a plain map of handles/sub-refs/refs/literals. */
+  output?: Record<string, InputValue>;
+}
 
 /**
  * Collect a flat `{ name: ParamRef }` map from the colocated pages, binding each
@@ -397,6 +427,71 @@ class DefinedTemplate<P extends readonly ColocatedPage[] | ParamMap, L> extends 
 }
 
 /**
+ * A concrete `Template` built from an AUTHORING-V2 config (`{ pages, effects,
+ * output }` — ADR-0025 Decision 4). Fields are module-scope consts, so there is
+ * no `f` closure: `build()` maps the `effects` to their steps, and `builtForm()`
+ * plans them with `chainManual: false` (effects order by data-dependency +
+ * `after:`, declaration order only as a tie-break) and flips on `ui:order`
+ * inference. Env-independent (no `load()`), so the form binds once and the
+ * synchronous `compile` path works unchanged.
+ */
+class DefinedTemplateV2 extends Template {
+  id: string;
+  title: string;
+  type: string;
+  private readonly effects: ReadonlyArray<EffectHandle<unknown>>;
+
+  constructor(cfg: DefineTemplateV2Config<readonly ColocatedPage[]>) {
+    super();
+    this.id = cfg.id;
+    this.title = cfg.title;
+    this.type = cfg.type;
+    if (cfg.description !== undefined) this.description = cfg.description;
+    if (cfg.tags !== undefined) this.tags = cfg.tags;
+    if (cfg.owner !== undefined) this.owner = cfg.owner;
+    if (cfg.lifecycle !== undefined) this.lifecycle = cfg.lifecycle;
+    if (cfg.extraSpec !== undefined) this.extraSpec = cfg.extraSpec;
+    const pages = cfg.pages as unknown as PageInput[];
+    // Bind each field's name from its page-map key (and reject a dup across pages),
+    // so every module-scope `.ref` / handle renders correctly. The field-ref map
+    // is discarded — v2 fields are consumed as module consts, not through `f`.
+    buildFieldRefs(pages);
+    this.pages = pages;
+    this.effects = cfg.effects;
+    if (cfg.output) this.output = cfg.output;
+  }
+
+  build(): Step[] {
+    return this.effects.map(effectToStep);
+  }
+
+  override builtForm(): BuiltForm {
+    this.bindParamNames();
+    const ownRefs = collectFormParamRefs(this.params, this.pages);
+    const effectSteps = this.effects.map(effectToStep);
+    const extraEdges = effectAfterEdges(this.effects);
+    // Effects: no hard declaration chain — ordered by data-dependency + `after:`,
+    // with declaration order only a tie-break (ADR-0025 §3). Reachable derives
+    // interleave, exactly as the v1 path plans them.
+    const { steps, diagnostics } = planDerives(effectSteps, this.output, ownRefs, {
+      chainManual: false,
+      extraEdges,
+    });
+    const form: BuiltForm = {
+      params: this.params,
+      pages: this.pages,
+      steps,
+      output: this.output,
+      // v2 ONLY: infer each page's `ui:order` from its map's insertion order. A v1
+      // template never sets this, so existing emission is byte-for-byte unchanged.
+      inferUiOrder: true,
+    };
+    if (diagnostics.length) form.diagnostics = diagnostics;
+    return form;
+  }
+}
+
+/**
  * Bind a concrete `parameters` value: an array → multi-page `pages` (branch
  * params included, via `bindPageNames`); a bare props object → the flat
  * `params` map. Returns the pieces plus the flat typed field-ref map.
@@ -433,6 +528,9 @@ function bindParameters<P extends readonly ColocatedPage[] | ParamMap>(
  * fixture value shape, so `execute(tpl, fixture)` type-checks the fixture's
  * `parameters` against the template's declared params.
  */
+export function defineTemplate<const P extends readonly ColocatedPage[]>(
+  cfg: DefineTemplateV2Config<P>,
+): TypedTemplate<ParamValues<P>>;
 export function defineTemplate<const P extends readonly ColocatedPage[] | ParamMap, L>(
   cfg: DefineTemplateConfigWithLoad<P, L>,
 ): TypedTemplate<ParamValues<P>>;
@@ -440,7 +538,29 @@ export function defineTemplate<const P extends readonly ColocatedPage[] | ParamM
   cfg: DefineTemplateConfig<P>,
 ): TypedTemplate<ParamValues<P>>;
 export function defineTemplate<const P extends readonly ColocatedPage[] | ParamMap, L>(
-  cfg: AnyDefineTemplateConfig<P, L>,
+  cfg: AnyDefineTemplateConfig<P, L> | DefineTemplateV2Config<readonly ColocatedPage[]>,
 ): Template {
-  return new DefinedTemplate<P, L>(cfg);
+  // A v2 config declares `effects:`. Reject the both-shapes-at-once mistake
+  // loudly (the type system already blocks it where expressible — the two config
+  // interfaces are disjoint — but a cast or `any` could slip past it).
+  if ("effects" in cfg) {
+    const bad: string[] = [];
+    if ("steps" in cfg) bad.push("steps");
+    if ("parameters" in cfg) bad.push("parameters");
+    if (bad.length) {
+      throw new Error(
+        `defineTemplate "${cfg.id}": a v2 template declares \`effects:\` and must NOT also declare ` +
+          `\`${bad.join("`/`")}\` — those are the v1 shape. Use \`pages:\` for the form and \`effects:\` ` +
+          `for the steps, or drop \`effects:\` to author the v1 way.`,
+      );
+    }
+    if (!("pages" in cfg) || !Array.isArray((cfg as DefineTemplateV2Config<readonly ColocatedPage[]>).pages)) {
+      throw new Error(
+        `defineTemplate "${cfg.id}": a v2 template (declaring \`effects:\`) must declare \`pages:\` — an ` +
+          `array of page(title, props) — as its form (the ordered table of contents).`,
+      );
+    }
+    return new DefinedTemplateV2(cfg as DefineTemplateV2Config<readonly ColocatedPage[]>);
+  }
+  return new DefinedTemplate<P, L>(cfg as AnyDefineTemplateConfig<P, L>);
 }

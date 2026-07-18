@@ -228,7 +228,9 @@ function buildParameters(form: BuiltForm): JsonSchemaObject | PageObject[] {
         seen.set(name, pg.title);
       }
     }
-    return form.pages.map(buildPage);
+    // `inferUiOrder` (v2 only) tells buildPage to emit each page's `ui:order`
+    // from its base fields' source order when the page has no explicit uiOrder.
+    return form.pages.map((pg) => buildPage(pg, { inferUiOrder: form.inferUiOrder === true }));
   }
   const properties: Record<string, unknown> = {};
   const required: string[] = [];

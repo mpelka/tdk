@@ -1,0 +1,12 @@
+---
+"@tdk/core": minor
+---
+
+Add the authoring-v2 defineTemplate surface (ADR-0025 Decisions 3 & 4, phase 3b, #18): effects with typed handles, `pages:` as an ordered table of contents, and handle-based `output`. Plus `any(...)` in `.when()` (#24).
+
+This is purely ADDITIVE. Every existing template compiles to byte-identical YAML, and every existing `execute()` run and scenario snapshot is unchanged — the new behaviour activates only for a template authored in the v2 shape (one that declares `effects:`), and the `any(...)`-in-`when` emission is unchanged for the predicates that were already accepted. No `output-changing:` / `snapshot-affecting:` flag applies.
+
+- `effect(id, action, opts)` — wraps a side-effectful step and returns a typed `EffectHandle<O>`. `handle.output.<key>` sub-refs render `${{ steps['<id>'].output.<key> }}`, typed by the declared output shape `O`, through the SAME guarded Proxy `derive` uses (identifier-only segments, reserved keys, injection-proof — factored into `handle.ts`, not forked). `.when(pred)` compiles a run condition; `after: [otherEffect]` / `.after(...)` states an order-only edge. `rawEffect(step)` is the escape hatch for a pre-built `Step`. A pack helper (a `defineAction`-style factory wrapping `effect` + registering a simulator) is the intended consumer — see `examples/oven-support-v2/plugin.ts`.
+- The v2 `defineTemplate({ pages, effects, output })` shape, additive alongside `{ parameters, steps }`. Steps are collected by reachability from the effects and the output and planned by the existing planner, extended so effects order by data-dependency first, then effects-list declaration order for peers, then `after:`. Each page's `ui:order` is inferred from its map's insertion order (base fields only) and emitted explicitly, so RJSF ordering is pinned; an explicit `uiOrder` still wins. Declaring both `effects:` and `steps:`/`parameters:` is a type error and a loud runtime throw.
+- `any(...)` is now accepted in `.when()` (step and effect conditions), compiling a cross-field OR to a Nunjucks `or` — `all(x, any(y, z))` nests as `(x) and ((y) or (z))`. The schema layer's `showWhen` still rejects a cross-field `any(...)` (the wire keys off one controller): a deliberate form-vs-condition asymmetry.
+- `ref.orElse(default)` now resolves the param's bound name LAZILY, so it composes with v2 module-scope authoring (`field.ref.orElse("")` where the name binds later, at compile).

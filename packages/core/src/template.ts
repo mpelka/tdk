@@ -143,6 +143,15 @@ export interface BuiltForm {
    * never affects the emitted YAML. Absent when there is nothing to report.
    */
   diagnostics?: string[];
+  /**
+   * Infer each page's `ui:order` from its map's insertion order (ADR-0025
+   * Decision 4) — set ONLY by the authoring-v2 surface (a template declaring
+   * `effects:`). A page WITHOUT an explicit `uiOrder` then emits `ui:order` for
+   * its base (non-conditional) fields in source order, so RJSF's field order is
+   * pinned to the authored TOC. Absent/false for every v1 template, so their
+   * emission is byte-for-byte unchanged.
+   */
+  inferUiOrder?: boolean;
 }
 
 /**
