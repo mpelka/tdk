@@ -615,11 +615,21 @@ function topoOrder(manualSteps: Step[], reachable: Map<string, DeriveDescriptor>
   }
 
   if (ordered.length !== nodes.size) {
-    const leftover = [...nodes.keys()].filter((k) => (indeg.get(k) ?? 0) > 0).map((k) => k.replace(/^[md]:/, ""));
-    throw new Error(
-      `derive: dependency cycle among derived values / steps — no valid order exists for: ` +
-        `${leftover.join(", ")}. A derive cannot (transitively) depend on itself.`,
-    );
+    // Name each stuck member WITH its kind, and tailor the closing hint to the
+    // kinds actually involved: a cycle can be all derives (a derive reading
+    // itself transitively), all steps/effects (an `after:` contradicting a data
+    // dependency), or a mix — the old derive-only wording misdiagnosed the
+    // effect-only case.
+    const leftoverKeys = [...nodes.keys()].filter((k) => (indeg.get(k) ?? 0) > 0);
+    const leftover = leftoverKeys.map((k) => (k.startsWith("d:") ? `derive "${k.slice(2)}"` : `step "${k.slice(2)}"`));
+    const kinds = new Set(leftoverKeys.map((k) => (k.startsWith("d:") ? "derive" : "step")));
+    const hint =
+      kinds.size === 1 && kinds.has("derive")
+        ? "A derive cannot (transitively) depend on itself."
+        : kinds.size === 1
+          ? "Check the effects' data references and `after:` hints — together they demand an impossible order."
+          : "Check the references (and any `after:` hints) among these — together they demand an impossible order.";
+    throw new Error(`step-ordering cycle — no valid order exists for: ${leftover.join(", ")}. ${hint}`);
   }
   return ordered;
 }

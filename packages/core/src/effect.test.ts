@@ -120,6 +120,28 @@ describe("effect — v2 planning", () => {
     expect(order).toEqual(["a", "b"]);
   });
 
+  test("an effect-only cycle (contradictory after:) throws the step-ordering wording, naming the members", () => {
+    const x = p.string({ title: "X", required: true });
+    // `after:` records the referenced effect's ID, so a seed handle can donate
+    // "a"'s id to `b` before the real `a` (which is after `b`) exists — a → b → a.
+    const aSeed = effect("a", "svc:a", { input: { v: x } });
+    const b = effect("b", "svc:b", { input: { v: x }, after: [aSeed] });
+    const a = effect("a", "svc:a", { input: { v: x }, after: [b] });
+    const tpl = defineTemplate({
+      id: "e5c",
+      title: "E5c",
+      type: "service",
+      pages: [page("P", { x })],
+      effects: [a, b],
+    });
+    // The cycle is purely between STEPS (effects) — the message must not claim a
+    // derive depends on itself; it names the kind of each stuck member.
+    expect(() => compile(tpl, target)).toThrow(/step-ordering cycle/);
+    expect(() => compile(tpl, target)).toThrow('step "a"');
+    expect(() => compile(tpl, target)).toThrow('step "b"');
+    expect(() => compile(tpl, target)).toThrow(/data references and `after:` hints/);
+  });
+
   test(".after(...) as a fluent method matches the `after:` option", () => {
     const x = p.string({ title: "X", required: true });
     const a = effect("a", "svc:a", { input: { v: x } });

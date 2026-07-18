@@ -498,7 +498,7 @@ declares it once:
 
 ```ts
 // examples/oven-support-v2/plugin.ts — the effect-helper pattern packs will use.
-import { effect, type EffectHandle, type InputValue, registerActionSimulator } from "@tdk/core";
+import { effect, type EffectHandle, type EffectInputValue, registerActionSimulator } from "@tdk/core";
 
 interface TicketOutput { body: { url: string; id: string } }
 
@@ -509,7 +509,9 @@ registerActionSimulator("bakery:raise-ticket", (input) => ({
   body: { id: `TCK-${input.oven}`, url: `https://catalog.example/tickets/TCK-${input.oven}` },
 }));
 
-export function raiseTicket(id: string, args: { title: InputValue; summary: InputValue; site: InputValue; oven: InputValue }): EffectHandle<TicketOutput> {
+// EffectInputValue admits any InputValue AND a bare param const — so a consumer
+// can pass `site: bakeryCode` directly and the effect normalizes it to `.ref`.
+export function raiseTicket(id: string, args: { title: EffectInputValue; summary: EffectInputValue; site: EffectInputValue; oven: EffectInputValue }): EffectHandle<TicketOutput> {
   return effect<TicketOutput>(id, "bakery:raise-ticket", { name: "Raise the ticket", input: args });
 }
 ```
