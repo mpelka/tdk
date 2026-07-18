@@ -1,8 +1,11 @@
-# HAND-WRITTEN ORACLE — the RESOLVED Oven Provisioner artifact as a Backstage
-# expert would author it. The head-baker resolver has ALREADY run: the concrete id
-# `baker-pastry-01` appears where the `headBakerOf("pastry")` marker was — in the
-# provision step's `if:` and the record step's `headBaker` input. The marker itself
-# never appears. The tests assert the compiled (resolved) artifact agrees with this.
+# HAND-WRITTEN ORACLE — the RESOLVED Oven Provisioner artifact (AUTHORING-V2 shape)
+# as a Backstage expert would author it. Same BEHAVIOUR as the phase-3a plugin-composed,
+# now the v2 form: pages-as-TOC (one page, inferred ui:order) and the two steps as an
+# `effects:` list (the `defineAction` provision step wrapped by `rawEffect`, then the
+# record log). The head-baker resolver has ALREADY run: the concrete id `baker-pastry-01`
+# appears where the `headBakerOf("pastry")` marker was — in the provision step's `if:`
+# and the record step's `headBaker` input. The marker itself never appears. The tests
+# assert the compiled (resolved) artifact agrees with this.
 apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
@@ -17,32 +20,41 @@ spec:
   type: service
   owner: team-bakery
   parameters:
-    required:
-      - station
-      - capacity
-      - ovenModel
-    properties:
-      station:
-        type: string
-        title: Station
-        enum:
-          - pastry
-          - bread
-      capacity:
-        type: number
-        title: Capacity (trays)
-      # HOOK B (field): the CakePickerWithDefault picker.
-      ovenModel:
-        type: string
-        title: Oven model
-        ui:field: CakePickerWithDefault
-        ui:options:
-          path: bakery/oven-models
-          default: deck-3000
+    - title: Provision
+      properties:
+        station:
+          type: string
+          title: Station
+          enum:
+            - pastry
+            - bread
+        capacity:
+          type: number
+          title: Capacity (trays)
+        # HOOK B (field): the CakePickerWithDefault picker.
+        ovenModel:
+          type: string
+          title: Oven model
+          ui:field: CakePickerWithDefault
+          ui:options:
+            path: bakery/oven-models
+            default: deck-3000
+      # ui:order is INFERRED from the page map's source order (v2 surface).
+      ui:order:
+        - station
+        - capacity
+        - ovenModel
+      required:
+        - station
+        - capacity
+        - ovenModel
   steps:
     # HOOK B (action): the provision step. Its `if:` is the RESOLVED head-baker id
     # (from the resolver marker) — a non-empty string, so the step runs. `model`
     # consumes the CakePickerWithDefault field, so the custom field's value lands here.
+    # HOOK B (action) via rawEffect: the provision step. Its `if:` is the RESOLVED
+    # head-baker id (from the resolver marker) — a non-empty string, so the step runs.
+    # `model` consumes the CakePickerWithDefault field, so the custom field's value lands here.
     - id: provision
       action: bakery:provision-oven
       input:
@@ -56,7 +68,8 @@ spec:
       input:
         # HOOK A (resolver): the RESOLVED id lands here — never the marker.
         headBaker: baker-pastry-01
-        ovenId: ${{ steps.provision.output.ovenId }}
+        # Read the provisioned oven id BY HANDLE (`provisioned.output.ovenId`).
+        ovenId: ${{ steps['provision'].output.ovenId }}
   output:
     station: ${{ parameters.station }}
     ovenModel: ${{ parameters.ovenModel }}

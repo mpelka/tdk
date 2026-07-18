@@ -1,7 +1,10 @@
-// The Order Ticket payload — ONE block-bodied `jsonata((c) => { … })` that assembles
-// the whole ticket. Kept in its own module so both the template AND the tests can
-// import the SAME `JsonataExpr` (the differential harness needs the expression
-// object, not just its compiled string).
+// The Order Ticket assembler — ONE block-bodied lambda that assembles the whole
+// ticket, wired into a `derive("build-ticket", …)` in template.ts (AUTHORING-V2).
+// Kept in its own module so the lambda reads cleanly AND the template stays a short
+// dataflow graph; the tests import the DERIVE HANDLE (`getDeriveExpr`) for the
+// differential harness, so the shared expression object lives on the derive, not
+// here. A `derive` transpiles its lambda through the SAME TS→JSONata transpiler
+// `jsonata()` uses, so every corner below is exercised exactly as before.
 //
 // It exercises, in one expression:
 //   - `$assert` guard (a ticket must name its customer),
@@ -14,30 +17,34 @@
 //   - `parseInt(discountCode)` via the lenient shim (numeric-prefix → number; no
 //     prefix → MISSING, not NaN).
 
-import { assert, jsonata } from "@tdk/core";
+import { assert } from "@tdk/core";
 
 /**
- * The `data` map the roadie step feeds the expression (its root, read bare).
- * `discountCode` is a plain `string` here (not optional): the roadie `data` always
- * renders it to a string (`${{ parameters.discountCode }}`), empty when the param
- * is absent — and the parseInt shim maps an empty/no-prefix string to MISSING.
+ * The derive's inferred context — the fields `build-ticket` reads. It matches the
+ * derive's `inputs` object exactly (`{ customerName, items, priority, discountCode }`),
+ * so the lambda's `i` is fully typed with no separate `Ctx` and no `data:` map.
+ * `discountCode` is a plain `string` (the field is optional but not conditional, and
+ * the roadie `data` always renders it to a string — empty when the param is absent,
+ * which the parseInt shim maps to MISSING).
  */
 export interface TicketCtx {
   customerName: string;
   items: { sku: string; qty: number; options: string[]; unitPrice?: number }[];
   priority: "low" | "normal" | "high";
   discountCode: string;
-  [key: string]: unknown;
 }
 
-export const ticketPayload = jsonata<TicketCtx>((c) => {
+// The block-bodied assembler — `derive("build-ticket", inputs, assembleTicket)`. An
+// ARROW (not a `function` declaration), so the TS→JSONata transpiler parses the whole
+// block, exactly as `jsonata((c) => { … })` does.
+export const assembleTicket = (i: TicketCtx) => {
   // Guard: a ticket must name its customer, else abort the run (→ $assert).
-  assert(c.customerName !== "", "customerName is required");
+  assert(i.customerName !== "", "customerName is required");
 
   // Per-item lines. The nested `.map` folds each item's options into a label and
   // REDUCES to a scalar via `.join(...)` — nested maps that reduce to a scalar
   // agree with JS (a non-reducing nested map would flatten; see the module note).
-  const lineItems = c.items.map((item) => ({
+  const lineItems = i.items.map((item) => ({
     sku: item.sku,
     qty: item.qty,
     // `item.unitPrice || 0` — VALUE semantics: a present price passes through; a
@@ -51,16 +58,16 @@ export const ticketPayload = jsonata<TicketCtx>((c) => {
   // `rushFee` is only non-zero for high priority — so `rushFee || 0` proves the
   // value (0 or 15) flows through, not `Boolean(rushFee)`.
   const baseFee = 5;
-  const rushFee = c.priority === "high" ? 15 : 0;
+  const rushFee = i.priority === "high" ? 15 : 0;
   const total = (baseFee || 0) + (rushFee || 0);
 
   // spread-merge: a base object overridden per priority (later keys win on both
   // sides). High priority flips `rush`; others attach the priority label.
   const base = { channel: "web", rush: false };
-  const meta = c.priority === "high" ? { ...base, rush: true } : { ...base, priority: c.priority };
+  const meta = i.priority === "high" ? { ...base, rush: true } : { ...base, priority: i.priority };
 
   return {
-    summary: `Order for ${c.customerName} — ${c.priority} priority (${c.items.length} item(s))`,
+    summary: `Order for ${i.customerName} — ${i.priority} priority (${i.items.length} item(s))`,
     lineItems,
     total,
     meta,
@@ -69,6 +76,6 @@ export const ticketPayload = jsonata<TicketCtx>((c) => {
     // (it maps to a $match-prefix shim, not $number(x, radix)); a base-10 default
     // is exactly the shim's behaviour.
     // biome-ignore lint/correctness/useParseIntRadix: the TDK jsonata transpiler rejects parseInt's radix argument — see docs/expression-support.md
-    discountPct: parseInt(c.discountCode),
+    discountPct: parseInt(i.discountCode),
   };
-});
+};

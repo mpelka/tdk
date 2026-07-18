@@ -11,26 +11,34 @@
 // Plus `assertExecuteAgainstGold` for whole-run agreement and schema validation of
 // BOTH the compiled entity and the hand-written gold.
 
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
+  _resetDeriveRegistry,
   assertDifferential,
   assertDifferentialJsonata,
   assertExecuteAgainstGold,
   assertValid,
   compile,
   execute,
+  getDeriveExpr,
   jsonata,
   validate,
 } from "@tdk/core";
 import { parse } from "yaml";
 import { scenarios } from "./__fixtures__/scenarios.ts";
-import { OrderTicketBuilder } from "./template.ts";
-import { type TicketCtx, ticketPayload } from "./ticket.ts";
+import { OrderTicketBuilder, ticket } from "./template.ts";
+import type { TicketCtx } from "./ticket.ts";
 
 const nonprod = { env: "test", outDir: "" } as const;
 const gold = readFileSync(new URL("./gold-standard.yaml", import.meta.url), "utf8");
+// The `build-ticket` step's hand-written expression (step 0 in the gold).
 const goldExpression = (parse(gold).spec.steps[0].input.expression as string).trim();
+
+// The derived-value registry is process-wide; leave it clean for later-loaded files.
+afterAll(() => {
+  _resetDeriveRegistry();
+});
 
 // Expression fixtures (the roadie step's `data` root) — three normal + a throwing
 // edge (empty customerName aborts via $assert). Includes a two-item order and the
@@ -77,19 +85,23 @@ const exprFixtures: TicketCtx[] = [
   { customerName: "", items: [], priority: "low", discountCode: "" },
 ];
 
-describe("order-ticket-builder — structure", () => {
+describe("order-ticket-builder — structure & planning (v2)", () => {
   const { object } = compile(OrderTicketBuilder, nonprod);
 
-  test("two steps: the roadie jsonata builder then the debug:log", () => {
+  test("the effect and its two derives plan in order (derives, then the effect)", () => {
+    // `build-ticket` (object derive) → `log-line` (reads its summary sub-ref) →
+    // `log-ticket` (the effect). The planner materializes the derives as jsonata
+    // steps ahead of the effect that consumes them.
     expect(object.spec.steps.map((s) => ({ id: s.id, action: s.action }))).toEqual([
       { id: "build-ticket", action: "roadiehq:utils:jsonata" },
+      { id: "log-line", action: "roadiehq:utils:jsonata" },
       { id: "log-ticket", action: "debug:log" },
     ]);
   });
 
-  test("roadie step: `data` fields are ${{ }} templates, `expression` is JSONata", () => {
+  test("build-ticket derive: `data` fields are ${{ }} templates, `expression` is JSONata", () => {
     const input = object.spec.steps[0]!.input as { data: Record<string, string>; expression: string };
-    // Every `data` field is a Scaffolder template (from nj) — NOT the JSONata.
+    // Every `data` field is a Scaffolder reference (a normalized field ref) — NOT the JSONata.
     for (const v of Object.values(input.data)) expect(v).toMatch(/^\$\{\{.*\}\}$/);
     // The expression is the JSONata block (a `$assert`/`:=` statement layer), never
     // a `${{ }}` template.
@@ -97,9 +109,24 @@ describe("order-ticket-builder — structure", () => {
     expect(input.expression).not.toContain("${{");
   });
 
-  test("the log step consumes the previous step's .output.result", () => {
-    const input = object.spec.steps[1]!.input as { message: string };
-    expect(input.message).toContain('steps["build-ticket"].output.result.summary');
+  test("the derive→derive→effect chain is auto-wired by handle", () => {
+    // log-line reads build-ticket's `summary` SUB-REF (object-derive sub-ref)…
+    const logLine = object.spec.steps[1]!.input as { data: Record<string, string> };
+    expect(logLine.data.summary).toBe("${{ steps['build-ticket'].output.result.summary }}");
+    // …and the effect reads the log line whole. Neither reference is hand-written.
+    const effect = object.spec.steps[2]!.input as { message: string };
+    expect(effect.message).toBe("${{ steps['log-line'].output.result }}");
+  });
+
+  test("ui:order is inferred from the page's source order", () => {
+    const pages = object.spec.parameters as Array<{ title: string; "ui:order"?: string[] }>;
+    expect(pages.map((p) => ({ title: p.title, order: p["ui:order"] }))).toEqual([
+      { title: "Order", order: ["customerName", "items", "priority", "discountCode"] },
+    ]);
+  });
+
+  test("output reads a field by ref", () => {
+    expect(object.spec.output).toEqual({ customer: "${{ parameters.customerName }}" });
   });
 });
 
@@ -122,7 +149,7 @@ describe("order-ticket-builder — the ticket expression (differential)", () => 
     // JSONata, across ALL fixtures. Invariant (c): the throwing $assert fixture
     // agrees throw-for-throw. This is where the singleton-collapse subtlety was
     // caught (the naive gold `items.{…}` diverged from the array-safe `.map`).
-    await assertDifferentialJsonata(ticketPayload, goldExpression, exprFixtures);
+    await assertDifferentialJsonata(getDeriveExpr(ticket), goldExpression, exprFixtures);
   });
 
   test("compiled JSONata == the TS oracle where the result has no nested NaN", async () => {
@@ -132,7 +159,7 @@ describe("order-ticket-builder — the ticket expression (differential)", () => 
     // TS oracle with a NESTED `NaN` (parseInt divergence), which the object-level
     // harness can't fold to missing; that edge is pinned in isolation below.
     const numericDiscount = exprFixtures.filter((f) => /^\s*[-+]?[0-9]/.test(f.discountCode ?? ""));
-    await assertDifferential(ticketPayload, numericDiscount);
+    await assertDifferential(getDeriveExpr(ticket), numericDiscount);
   });
 
   test("the parseInt(discountCode) shim — isolated, with nanIsMissing", async () => {
@@ -178,9 +205,11 @@ describe("order-ticket-builder — whole-run agreement vs the gold", () => {
     // A jsonata step whose expression throws records the error and no output…
     expect(run.steps["build-ticket"]!.error).toContain("customerName is required");
     expect(run.steps["build-ticket"]!.output).toBeUndefined();
-    // …and, like real Backstage, the failure HALTS the task: the downstream
-    // `log-ticket` never runs (it is `notReached`, with no rendered input), and a
-    // failed task has no template output.
+    // …and, like real Backstage, the failure HALTS the task: BOTH downstream steps
+    // (the `log-line` derive and the `log-ticket` effect) are `notReached`, with no
+    // rendered input, and a failed task has no template output.
+    expect(run.steps["log-line"]!.notReached).toBe(true);
+    expect(run.steps["log-line"]!.output).toBeUndefined();
     expect(run.steps["log-ticket"]!.notReached).toBe(true);
     expect(run.steps["log-ticket"]!.input).toBeUndefined();
     expect(run.steps["log-ticket"]!.output).toBeUndefined();

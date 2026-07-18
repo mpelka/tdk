@@ -1,5 +1,18 @@
 // EXAMPLE 1 — "Custom Cake Order Wizard": the conditional-form stress test.
 //
+// ⚠️ DELIBERATELY V1 (authoring-v1). This is the fleet's compatibility-surface keeper
+// (ADR-0025 phase 4, #19): it is authored the v1 way ON PURPOSE, because it exercises
+// the v1-ONLY conditional-form shapes that authoring-v2 does NOT replace —
+// `dep.when(...)`, a `rawDependencies` JSON-Schema passthrough, and the OBJECT form of
+// `page({ title, properties, dependencies, rawDependencies })` (which the colocated
+// `page(title, props)` map form the v2 `pages:` list takes cannot carry). Page 4 shows
+// the SAME synthesis authored the v2 way (the `.showWhen(...)` method + `all`/`any`),
+// so the file is itself a v1-vs-v2 comparison. The v2 form surface is demonstrated in
+// oven-support-v2; the effects/derive surface in the migrated payload-assembly,
+// fallback-chains and plugin-composed examples. Migrating this one would delete the
+// only coverage of the v1 shapes above, so it stays — see AGENTS.md on old primitives
+// remaining until a pre-1.0 removal.
+//
 // This template exercises every way TDK reveals a field conditionally, all on ONE
 // page, and proves they coexist on DISTINCT controllers:
 //

@@ -60,6 +60,13 @@ high priority — rush fee, two items, real discount:
             channel: web
             rush: true
           discountPct: 15
+    log-line:
+      input:
+        data:
+          summary: Order for Alice — high priority (2 item(s))
+        expression: '("Ticket: " & (summary))'
+      output:
+        result: "Ticket: Order for Alice — high priority (2 item(s))"
     log-ticket:
       input:
         message: "Ticket: Order for Alice — high priority (2 item(s))"
@@ -117,6 +124,13 @@ normal priority — non-numeric-prefix discount → missing:
             channel: web
             rush: false
             priority: normal
+    log-line:
+      input:
+        data:
+          summary: Order for Bob — normal priority (1 item(s))
+        expression: '("Ticket: " & (summary))'
+      output:
+        result: "Ticket: Order for Bob — normal priority (1 item(s))"
     log-ticket:
       input:
         message: "Ticket: Order for Bob — normal priority (1 item(s))"
@@ -173,6 +187,13 @@ low priority — free-text discount code → missing, zero-price item:
             channel: web
             rush: false
             priority: low
+    log-line:
+      input:
+        data:
+          summary: Order for Cleo — low priority (1 item(s))
+        expression: '("Ticket: " & (summary))'
+      output:
+        result: "Ticket: Order for Cleo — low priority (1 item(s))"
     log-ticket:
       input:
         message: "Ticket: Order for Cleo — low priority (1 item(s))"

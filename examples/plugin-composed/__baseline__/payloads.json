@@ -1,0 +1,80 @@
+{
+  "provision a pastry oven": {
+    "output": {
+      "station": "pastry",
+      "ovenModel": "deck-3000"
+    },
+    "effects": {
+      "bakery:provision-oven": {
+        "input": {
+          "station": "pastry",
+          "capacity": 12,
+          "model": "deck-3000"
+        },
+        "output": {
+          "ovenId": "oven-pastry-12",
+          "endpoint": "https://ovens.example/pastry/12",
+          "ready": true
+        }
+      },
+      "debug:log": {
+        "input": {
+          "headBaker": "baker-pastry-01",
+          "ovenId": "oven-pastry-12"
+        }
+      }
+    }
+  },
+  "provision a bread oven": {
+    "output": {
+      "station": "bread",
+      "ovenModel": "rack-500"
+    },
+    "effects": {
+      "bakery:provision-oven": {
+        "input": {
+          "station": "bread",
+          "capacity": 24,
+          "model": "rack-500"
+        },
+        "output": {
+          "ovenId": "oven-bread-24",
+          "endpoint": "https://ovens.example/bread/24",
+          "ready": true
+        }
+      },
+      "debug:log": {
+        "input": {
+          "headBaker": "baker-pastry-01",
+          "ovenId": "oven-bread-24"
+        }
+      }
+    }
+  },
+  "provision a small pastry oven": {
+    "output": {
+      "station": "pastry",
+      "ovenModel": "deck-3000"
+    },
+    "effects": {
+      "bakery:provision-oven": {
+        "input": {
+          "station": "pastry",
+          "capacity": 4,
+          "model": "deck-3000"
+        },
+        "output": {
+          "ovenId": "oven-pastry-4",
+          "endpoint": "https://ovens.example/pastry/4",
+          "ready": true
+        }
+      },
+      "debug:log": {
+        "input": {
+          "headBaker": "baker-pastry-01",
+          "ovenId": "oven-pastry-4"
+        }
+      }
+    }
+  }
+}

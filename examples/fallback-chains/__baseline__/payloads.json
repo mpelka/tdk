@@ -1,0 +1,86 @@
+{
+  "present slot + named contact — no fallback": {
+    "effects": {
+      "http:backstage:request": {
+        "input": {
+          "path": "/api/bakery/assignment"
+        },
+        "output": {
+          "name": "north-riverside-bakery"
+        }
+      },
+      "debug:log": {
+        "input": {
+          "slot": "9am-slot",
+          "recipient": "BAKER SAM",
+          "banner": "Delivery slot — urgency 4",
+          "tier": "URGENT",
+          "region": "north"
+        }
+      }
+    }
+  },
+  "null slot + missing contact — both fall back": {
+    "effects": {
+      "http:backstage:request": {
+        "input": {
+          "path": "/api/bakery/assignment"
+        },
+        "output": {
+          "name": "west-park-bakery"
+        }
+      },
+      "debug:log": {
+        "input": {
+          "slot": "next-available",
+          "recipient": "WEST-PARK-BAKERY",
+          "banner": "Delivery slot — urgency 2",
+          "tier": "standard",
+          "region": "west"
+        }
+      }
+    }
+  },
+  "absent slot — fallback (same as null)": {
+    "effects": {
+      "http:backstage:request": {
+        "input": {
+          "path": "/api/bakery/assignment"
+        },
+        "output": {
+          "name": "south-end-bakery"
+        }
+      },
+      "debug:log": {
+        "input": {
+          "slot": "next-available",
+          "recipient": "SOUTH-END-BAKERY",
+          "banner": "Delivery slot — urgency 3",
+          "tier": "URGENT",
+          "region": "south"
+        }
+      }
+    }
+  },
+  "empty-string slot — passes through (distinct from null)": {
+    "effects": {
+      "http:backstage:request": {
+        "input": {
+          "path": "/api/bakery/assignment"
+        },
+        "output": {
+          "name": "east-side-bakery"
+        }
+      },
+      "debug:log": {
+        "input": {
+          "slot": "",
+          "recipient": "EAST-SIDE-BAKERY",
+          "banner": "Delivery slot — urgency 1",
+          "tier": "standard",
+          "region": "east"
+        }
+      }
+    }
+  }
+}

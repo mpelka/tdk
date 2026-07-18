@@ -1,0 +1,38 @@
+{
+  "high priority — rush fee, two items, real discount": {
+    "output": {
+      "customer": "Alice"
+    },
+    "effects": {
+      "debug:log": {
+        "input": {
+          "message": "Ticket: Order for Alice — high priority (2 item(s))"
+        }
+      }
+    }
+  },
+  "normal priority — non-numeric-prefix discount → missing": {
+    "output": {
+      "customer": "Bob"
+    },
+    "effects": {
+      "debug:log": {
+        "input": {
+          "message": "Ticket: Order for Bob — normal priority (1 item(s))"
+        }
+      }
+    }
+  },
+  "low priority — free-text discount code → missing, zero-price item": {
+    "output": {
+      "customer": "Cleo"
+    },
+    "effects": {
+      "debug:log": {
+        "input": {
+          "message": "Ticket: Order for Cleo — low priority (1 item(s))"
+        }
+      }
+    }
+  }
+}

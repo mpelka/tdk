@@ -1,7 +1,11 @@
 // EXAMPLE 7 — "Oven Support Request (v2)": the AUTHORING-V2 surface, end to end.
 //
-// The SAME oven-support request as example 6, now authored the way ADR-0025
-// Decision 4 promises — a dataflow graph of module-scope values:
+// The AFTER half of the before/after pair with `examples/oven-support` (example 6):
+// the SAME oven-support request, now authored the way ADR-0025 Decision 4 promises —
+// a dataflow graph of module-scope values. Read the two side by side to see what the
+// v2 migration changes (v1: `parameters`/`steps`/functional `output`; v2: `pages`/
+// `effects`/handle `output`). The pair stays UNMIGRATED on purpose — it is the
+// demonstration (ADR-0025 phase 4, #19).
 //
 //   - FIELDS are module-scope consts with their OWN visibility (`.showWhen(...)`),
 //     built with `p.choice` (the enum/enumNames sugar).

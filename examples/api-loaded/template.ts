@@ -1,5 +1,11 @@
 // EXAMPLE 6 — "Storefront Flavour Picker": a REAL network load().
 //
+// ⚠️ DELIBERATELY V1 (authoring-v1) — kept on the `load()` template surface, for the
+// same reason as env-loaded: the authoring-v2 `{ pages, effects, output }` config has
+// no `load()` hook, and this template's `featuredFlavour` enum is built from the
+// awaited `load()` data (`parameters: (data) => …`). Stays v1 until the v2 surface
+// grows a loader (ADR-0025 phase 4, #19).
+//
 // This is the sibling of env-loaded (the Seasonal Menu Publisher). Where that one
 // loads from an in-process stub, THIS one's `load(ctx)` does a real `fetch` against
 // an HTTP endpoint and bakes the returned flavours into the form. It exists to prove
