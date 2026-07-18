@@ -244,8 +244,18 @@ function buildBranch(controllerName: string, branch: Branch): Record<string, unk
   return out;
 }
 
+/** Options for `buildPage`. */
+export interface BuildPageOptions {
+  /**
+   * Infer `ui:order` from the base fields' source order when the page has no
+   * explicit `uiOrder` (ADR-0025 Decision 4 — the authoring-v2 surface). Off by
+   * default, so a v1 page is emitted byte-for-byte as before.
+   */
+  inferUiOrder?: boolean;
+}
+
 /** Build one authored page into its emitted `PageObject`. */
-export function buildPage(input: PageInput): PageObject {
+export function buildPage(input: PageInput, opts: BuildPageOptions = {}): PageObject {
   // Partition the flat properties into BASE fields and `showWhen` CONDITIONAL
   // fields. Conditional fields are moved out of the base form and compiled into
   // the dependency tree; base fields stay on the page.
@@ -268,7 +278,14 @@ export function buildPage(input: PageInput): PageObject {
   const finalRequired = input.required ?? required;
   const out: PageObject = { title: input.title, properties };
   if (input.uiOrder?.length) {
+    // An explicit uiOrder always wins (ADR-0025 Decision 4).
     out["ui:order"] = input.uiOrder;
+  } else if (opts.inferUiOrder) {
+    // v2 inference: the base fields in source order. Conditional fields live in
+    // `dependencies`, not the root `properties`, so they are NOT listed (RJSF
+    // requires ui:order to name exactly the root properties). Empty → omitted.
+    const order = Object.keys(properties);
+    if (order.length) out["ui:order"] = order;
   }
   if (finalRequired.length) out.required = finalRequired;
 

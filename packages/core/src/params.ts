@@ -145,11 +145,13 @@ export type ShowWhenInput = ShowWhen | ShowWhenPredicate | ShowWhenPredicate[];
  * contributes its one (same-field) controller as one AND-ed term.
  *
  * Generic over the argument tuple (returning `T`, not the widened
- * `ShowWhenPredicate[]`) so each call site keeps the precise element types: an
- * `all(...)` of plain conditions still satisfies `step()`'s `when?:` option
- * (which accepts `ShowWhenCondition[]` ONLY — `any(...)` is showWhen-layer
- * vocabulary, see `compileWhenExpr`), while an `all(...)` containing `any(...)`
- * satisfies `showWhen` but is a TYPE error in `when:` position.
+ * `ShowWhenPredicate[]`) so each call site keeps the precise element types. Both
+ * `step()`/`effect()`'s `when?:` and `showWhen` accept `ShowWhenPredicate[]`, so
+ * an `all(...)` of plain conditions and an `all(...)` containing `any(...)` are
+ * BOTH valid in either position — `compileWhenExpr` compiles the nested `any(...)`
+ * to a Nunjucks `or` (issue #24). The layers differ only in what `any(...)`
+ * ALONE resolves to: a step condition allows a cross-field OR, `showWhen` does
+ * not (the wire keys off one controller — see `resolveAny`).
  */
 export function all<T extends ShowWhenPredicate[]>(...conditions: T): T {
   return conditions;
@@ -215,13 +217,41 @@ function compileWhenFragment(cond: ShowWhenCondition): string {
 }
 
 /**
- * Compile a `.when()` predicate (`step()`'s `when` option, ADR-0025 §5) — the
- * SAME typed conditions `showWhen` accepts (`field.is(v)`, `field.in(...)`, or
- * `all(...)` to AND them) — to the full Scaffolder `${{ … }}` boolean string
- * assigned to `Step.if`. A single condition emits unparenthesized
- * (`${{ parameters.priority == "High" }}`); several `all(...)` conditions each
- * get their own parens, joined with the Nunjucks `and` operator, mirroring
- * `showWhen`'s multi-key AND semantics.
+ * Compile ONE `any(...)` OR to its Nunjucks boolean FRAGMENT — each branch's
+ * condition parenthesized, joined by the Nunjucks `or` operator. A CROSS-FIELD OR
+ * is allowed here (issue #24): a step condition compiles to Nunjucks, which has
+ * `or`, so `any(site.is("riverside"), ovenType.is("deck"))` becomes
+ * `(parameters.site == "riverside") or (parameters.ovenType == "deck")`. This is
+ * the DELIBERATE asymmetry with the schema layer, where `showWhen`'s `any(...)`
+ * still rejects a cross-field OR (a JSON-Schema dependency keys off one
+ * controller — see `resolveAny`): the FORM cannot express it, the step CONDITION
+ * can.
+ */
+function compileAnyFragment(pred: ShowWhenAny): string {
+  if (pred.conditions.length === 0) {
+    throw new Error("any(...) needs at least one condition — pass one or more field.is(...) / field.in(...).");
+  }
+  return pred.conditions
+    .map(compileWhenFragment)
+    .map((f) => `(${f})`)
+    .join(" or ");
+}
+
+/** Compile one predicate — a condition (`==`/`in`) or an `any(...)` OR (`or`). */
+function compilePredicateFragment(pred: ShowWhenPredicate): string {
+  return isShowWhenAny(pred) ? compileAnyFragment(pred) : compileWhenFragment(pred);
+}
+
+/**
+ * Compile a `.when()` predicate (`step()`/`effect()`'s `when` option, ADR-0025
+ * §5) — the SAME typed predicates `showWhen` accepts (`field.is(v)`,
+ * `field.in(...)`, `all(...)` to AND, `any(...)` to OR) — to the full Scaffolder
+ * `${{ … }}` boolean string assigned to `Step.if`. A single predicate emits at
+ * the top level (a bare condition unparenthesized, `${{ parameters.priority ==
+ * "High" }}`); several `all(...)` predicates each get their own parens, joined
+ * with the Nunjucks `and` operator, mirroring `showWhen`'s multi-key AND. An
+ * `any(...)` term contributes its `or`-joined branches, so `all(x, any(y, z))`
+ * nests as `(x) and ((y) or (z))`.
  *
  * The emitted expression is a single full `${{ … }}` block evaluating to a
  * boolean, so it is read by BOTH the real Backstage `isTruthy` and core's
@@ -229,30 +259,22 @@ function compileWhenFragment(cond: ShowWhenCondition): string {
  * (see execute.ts) — the two can never disagree on a boolean they both just
  * coerce with `!!`.
  *
- * `any(...)` is NOT accepted here — deliberately, and separately from the
- * schema layer's reason. `showWhen` rejects a cross-field OR because the wire
- * cannot express it; a step condition compiles to Nunjucks, which CAN (`or`).
- * Wiring `any(...)` into `.when()` is therefore a real design decision (its
- * semantics would DIVERGE from `showWhen`'s), deferred — not a rebase
- * side-effect. Until then it fails loudly at both layers: the type (`when?:`
- * names only `ShowWhenCondition`) and this runtime guard for untyped callers.
+ * `any(...)` IS accepted here (issue #24), unlike in `showWhen` — see
+ * `compileAnyFragment` for the deliberate form-vs-condition asymmetry.
  */
-export function compileWhenExpr(input: ShowWhenCondition | ShowWhenCondition[]): string {
-  const conditions = Array.isArray(input) ? input : [input];
-  if (conditions.length === 0) {
-    throw new Error("when(...) requires at least one condition — pass a field.is(...)/.in(...) or all(...).");
+export function compileWhenExpr(input: ShowWhenPredicate | ShowWhenPredicate[]): string {
+  const preds = Array.isArray(input) ? input : [input];
+  if (preds.length === 0) {
+    throw new Error(
+      "when(...) requires at least one predicate — pass a field.is(...)/.in(...), any(...), or all(...).",
+    );
   }
-  for (const cond of conditions) {
-    if (isShowWhenAny(cond)) {
-      throw new Error(
-        "when(...) does not accept any(...) — pass field.is(...)/.in([...]) conditions, or all(...) of " +
-          "them. An OR on ONE field is that field's .in([...]). (A cross-field OR in a step condition is " +
-          "expressible in Nunjucks but not wired into when(...) yet — a deliberate follow-up.)",
-      );
-    }
-  }
-  const fragments = conditions.map(compileWhenFragment);
-  const body = fragments.length === 1 ? fragments[0]! : fragments.map((f) => `(${f})`).join(" and ");
+  // A single predicate emits its fragment at the top level; a multi-predicate
+  // all(...) parenthesizes each term and joins with `and`.
+  const body =
+    preds.length === 1
+      ? compilePredicateFragment(preds[0]!)
+      : preds.map((p) => `(${compilePredicateFragment(p)})`).join(" and ");
   return `\${{ ${body} }}`;
 }
 
@@ -497,15 +519,20 @@ export class ParamRef implements RawRef {
           'pass a concrete fallback (e.g. "" or 0).',
       );
     }
-    const name = this.param.requireName();
     const encoded = JSON.stringify(defaultValue);
-    const expr = `parameters.${name} | default(${encoded})`;
-    validateNunjucks(expr);
+    // Validate the `| default(...)` filter shape ONCE, with a placeholder name:
+    // the param's real name only fills the lookup path, never affects validity,
+    // and it may not be bound yet — a module-scope `field.ref.orElse(...)` in a v2
+    // template binds the name later, at compile (ADR-0025 Decision 4). The real
+    // name is resolved lazily (a thunk) at render, exactly like the ref itself.
+    validateNunjucks(`parameters.__probe__ | default(${encoded})`);
+    const param = this.param;
+    const njSource = (): string => `parameters.${param.requireName()} | default(${encoded})`;
     const fn = (ctx: NjContext): unknown => {
-      const v = (ctx.parameters as Record<string, unknown>)[name];
+      const v = (ctx.parameters as Record<string, unknown>)[param.requireName()];
       return v === undefined ? defaultValue : v;
     };
-    return new NunjucksExpr<NjContext, unknown>(expr, fn);
+    return new NunjucksExpr<NjContext, unknown>(njSource, fn);
   }
 }
 

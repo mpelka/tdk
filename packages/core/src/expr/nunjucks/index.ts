@@ -35,12 +35,27 @@ export class NunjucksExpr<Ctx = NjContext, R = unknown> implements RawRef {
   readonly __tdkRawRef = true as const;
   readonly __tdkNunjucksExpr = true as const;
 
+  /**
+   * The expression source: a literal string (the common case — `nj(...)`), or a
+   * THUNK that computes it lazily. The thunk exists so a marker whose string
+   * depends on a param's bound name — `ref.orElse(default)` — can be built at
+   * MODULE scope, before `defineTemplate` binds the name, and resolve it at
+   * render (compile) time. See `ParamRef.orElse`.
+   */
+  readonly nunjucksSource: string | (() => string);
+
   constructor(
-    /** The compiled Nunjucks expression string (without `${{ }}`). */
-    readonly nunjucks: string,
+    nunjucks: string | (() => string),
     /** The original author function — the JS test oracle. */
     readonly fn: (ctx: Ctx) => R,
-  ) {}
+  ) {
+    this.nunjucksSource = nunjucks;
+  }
+
+  /** The compiled Nunjucks expression string (without `${{ }}`) — thunk resolved. */
+  get nunjucks(): string {
+    return typeof this.nunjucksSource === "function" ? this.nunjucksSource() : this.nunjucksSource;
+  }
 
   /** Render to the Scaffolder expression string. Env-independent. */
   render(_resolve: RefResolver): string {

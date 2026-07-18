@@ -3,7 +3,7 @@
 // conditions (cycle, duplicate name, unreachable warning), cross-template
 // independence, sub-ref injection guarding, and env.pick edge collection.
 
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { compile } from "./compile.ts";
 import { defineTemplate, step } from "./define.ts";
 import { _resetDeriveRegistry, derive, getDeriveExpr, isDeriveHandle } from "./derive.ts";
@@ -14,8 +14,15 @@ import { p } from "./params.ts";
 const target = { env: "test", outDir: "" } as const;
 
 // A fresh registry per test so the unreachable-derive scan sees only this test's
-// declarations (the registry is process-wide — see `declaredDerives`).
+// declarations (the registry is process-wide — see `declaredDerives`). The
+// afterAll leaves it clean for LATER-loaded test files too: several tests here
+// declare PARAMLESS derives (nj-only inputs — e.g. `cyc-a`, `picked`), which are
+// vacuously attributable to every template and would contaminate any other
+// file's no-diagnostics assertion (test-file order is platform-dependent).
 beforeEach(() => {
+  _resetDeriveRegistry();
+});
+afterAll(() => {
   _resetDeriveRegistry();
 });
 

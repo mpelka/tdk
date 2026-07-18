@@ -1,0 +1,148 @@
+urgent — other problem, ticket MOCKED (mock wins over the simulator):
+  steps:
+    ticket-title:
+      input:
+        data:
+          bakeryCode: BK1
+          ovenId: OV-4471
+          severity: urgent
+        expression: '((((severity = "urgent") ? "[URGENT] " : "")) & "Oven " & (ovenId)
+          & " at " & (bakeryCode))'
+      output:
+        result: "[URGENT] Oven OV-4471 at BK1"
+    sla-hours:
+      input:
+        data:
+          severity: urgent
+        expression: |-
+          ((severity = "urgent")
+            ? 4
+            : ((severity = "normal") ? 24 : 72))
+      output:
+        result: 4
+    problem-summary:
+      input:
+        data:
+          problemArea: other
+          otherDetail: Door seal warped, heat escaping
+        expression: |-
+          ((problemArea = "other")
+            ? ($boolean(otherDetail) ? otherDetail : "unspecified")
+            : problemArea)
+      output:
+        result: Door seal warped, heat escaping
+    open-oven-ticket:
+      input:
+        title: "[URGENT] Oven OV-4471 at BK1"
+        slaHours: 4
+        summary: Door seal warped, heat escaping
+        site: BK1
+        oven: OV-4471
+        ovenType: deck
+        urgentReason: Production line stopped
+        contact: baker@riverside.example
+      output:
+        body:
+          id: TCK-8801
+          url: https://catalog.example/tickets/8801
+  output:
+    ticketUrl: https://catalog.example/tickets/8801
+    ticketId: TCK-8801
+normal — heating problem, ticket SIMULATED (no mock):
+  steps:
+    ticket-title:
+      input:
+        data:
+          bakeryCode: BK2
+          ovenId: OV-1200
+          severity: normal
+        expression: '((((severity = "urgent") ? "[URGENT] " : "")) & "Oven " & (ovenId)
+          & " at " & (bakeryCode))'
+      output:
+        result: Oven OV-1200 at BK2
+    sla-hours:
+      input:
+        data:
+          severity: normal
+        expression: |-
+          ((severity = "urgent")
+            ? 4
+            : ((severity = "normal") ? 24 : 72))
+      output:
+        result: 24
+    problem-summary:
+      input:
+        data:
+          problemArea: heating
+        expression: |-
+          ((problemArea = "other")
+            ? ($boolean(otherDetail) ? otherDetail : "unspecified")
+            : problemArea)
+      output:
+        result: heating
+    open-oven-ticket:
+      input:
+        title: Oven OV-1200 at BK2
+        slaHours: 24
+        summary: heating
+        site: BK2
+        oven: OV-1200
+        ovenType: convection
+        urgentReason: ""
+        contact: ops@oldtown.example
+      output:
+        body:
+          id: TCK-OV-1200
+          url: https://catalog.example/tickets/TCK-OV-1200
+  output:
+    ticketUrl: https://catalog.example/tickets/TCK-OV-1200
+    ticketId: TCK-OV-1200
+low — conveyor problem, ticket SIMULATED (no mock):
+  steps:
+    ticket-title:
+      input:
+        data:
+          bakeryCode: BK3
+          ovenId: OV-0007
+          severity: low
+        expression: '((((severity = "urgent") ? "[URGENT] " : "")) & "Oven " & (ovenId)
+          & " at " & (bakeryCode))'
+      output:
+        result: Oven OV-0007 at BK3
+    sla-hours:
+      input:
+        data:
+          severity: low
+        expression: |-
+          ((severity = "urgent")
+            ? 4
+            : ((severity = "normal") ? 24 : 72))
+      output:
+        result: 72
+    problem-summary:
+      input:
+        data:
+          problemArea: conveyor
+        expression: |-
+          ((problemArea = "other")
+            ? ($boolean(otherDetail) ? otherDetail : "unspecified")
+            : problemArea)
+      output:
+        result: conveyor
+    open-oven-ticket:
+      input:
+        title: Oven OV-0007 at BK3
+        slaHours: 72
+        summary: conveyor
+        site: BK3
+        oven: OV-0007
+        ovenType: rack
+        urgentReason: ""
+        contact: team@harbourfront.example
+      output:
+        body:
+          id: TCK-OV-0007
+          url: https://catalog.example/tickets/TCK-OV-0007
+  output:
+    ticketUrl: https://catalog.example/tickets/TCK-OV-0007
+    ticketId: TCK-OV-0007

@@ -12,5 +12,14 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["bun"]
   },
-  "include": ["conditional-forms", "payload-assembly", "fallback-chains", "env-loaded", "plugin-composed"]
+  "include": [
+    "conditional-forms",
+    "payload-assembly",
+    "fallback-chains",
+    "env-loaded",
+    "api-loaded",
+    "plugin-composed",
+    "oven-support",
+    "oven-support-v2"
+  ]
 }

@@ -17,10 +17,12 @@
 // short-circuits to the manual steps unchanged).
 
 import { isEnvPick } from "./env.ts";
-import type { RawRef, RefResolver } from "./expr/index.ts";
+import type { RawRef } from "./expr/index.ts";
 import { isRawExpr, isRawRef } from "./expr/index.ts";
 import type { JsonataExpr } from "./expr/jsonata/index.ts";
 import { jsonata } from "./expr/jsonata/index.ts";
+import type { HandleSpec, ReservedSubRefKey } from "./handle.ts";
+import { makeHandleProxy, readHandleInfo } from "./handle.ts";
 import type { ConditionalBrand } from "./params.ts";
 import { ParamBase, ParamRef } from "./params.ts";
 import { isResolvable } from "./resolve.ts";
@@ -49,30 +51,6 @@ export interface DeriveMarker<R> extends RawRef {
   /** Phantom — carries the lambda's return type `R`. Never present at runtime. */
   readonly __tdkResultType: R;
 }
-
-/**
- * The keys that can never be sub-refs, excluded from `DeriveSubRefs` so reaching
- * one is a COMPILE error (matching the runtime, which returns `undefined` for
- * the reserved set and the marker's own member for `render`/`toString`):
- *   - `render` / `toString` — the marker's own members (returned as themselves),
- *   - `then` / `catch` / `finally` — a sub-ref here would make a handle look
- *     thenable and break `await`,
- *   - `toJSON` / `valueOf` / `constructor` / `prototype` — serialization and
- *     object internals a runtime probes,
- *   - every `__`-prefixed key — TDK marker flags (`__tdkJsonataExpr`, …) must
- *     read `undefined`, never a truthy sub-ref.
- */
-type ReservedSubRefKey =
-  | "render"
-  | "toString"
-  | "then"
-  | "catch"
-  | "finally"
-  | "toJSON"
-  | "valueOf"
-  | "constructor"
-  | "prototype"
-  | `__${string}`;
 
 /**
  * The typed sub-refs an OBJECT-typed handle exposes: one handle per property, so
@@ -131,11 +109,8 @@ export interface DeriveDescriptor {
   readonly expr: JsonataExpr;
 }
 
-/** The symbol under which a handle Proxy stores its `{ descriptor, path }`. */
-const HANDLE_INFO = Symbol("tdk.deriveHandle");
-
-/** The `{ descriptor, path }` a handle carries, read via `handleInfo`. */
-interface HandleInfo {
+/** The `{ descriptor, path }` a derive handle carries, read via `deriveInfo`. */
+interface DeriveInfo {
   descriptor: DeriveDescriptor;
   /** The property path appended after `.output.result` (sub-refs). `[]` = root. */
   path: readonly string[];
@@ -159,78 +134,28 @@ export function _resetDeriveRegistry(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Handle construction — a guarded Proxy.
+// Handle construction — the shared guarded Proxy (handle.ts).
 // ---------------------------------------------------------------------------
 
-/** Marker members that live on the target — returned as-is, never a sub-ref. */
-const OWN_MEMBERS = new Set(["__tdkRawRef", "__tdkDeriveHandle", "render", "toString"]);
-
 /**
- * String keys that must NOT become sub-refs even though they are absent from the
- * target: promise/serialization/object internals a runtime may probe. Returning
- * a sub-ref here would make a handle look thenable (breaking `await`) or corrupt
- * `JSON.stringify`. All `__`-prefixed keys are likewise blocked (unknown TDK
- * marker flags — a handle must read as `undefined` for `__tdkJsonataExpr` etc.,
- * never as a truthy sub-ref).
- */
-const RESERVED_KEYS = new Set(["then", "catch", "finally", "toJSON", "valueOf", "constructor", "prototype"]);
-
-/** Render a handle to its Scaffolder expression string (env-independent). */
-function renderHandle(descriptor: DeriveDescriptor, path: readonly string[]): string {
-  const suffix = path.map((seg) => `.${seg}`).join("");
-  return `\${{ steps['${descriptor.name}'].output.result${suffix} }}`;
-}
-
-/**
- * The shape a sub-ref path segment must have: a plain identifier. Every segment
- * is spliced verbatim into the emitted `${{ steps['…'].output.result.<seg> }}`
- * path, so an unconstrained key could BREAK OUT of the expression (a key holding
- * `'] }} … {{ '` would terminate the block and open another — injection). The
- * check runs at sub-ref CREATION (the `get` trap), so the bad key fails at the
- * access site, not at some later render.
- */
-const SUBREF_SEGMENT = /^[A-Za-z_$][\w$]*$/;
-
-/**
- * Build a handle Proxy over a real `RawRef` target. Known members resolve to the
- * target; an unknown data-like string key yields a SUB-REF handle with the path
- * extended (`jira.summary` → a handle to `.result.summary`) — after validating
- * the key against `SUBREF_SEGMENT` (a non-identifier key THROWS: it would be
- * spliced into the emitted expression path). See `DeriveSubRefs` for the limits
- * this trap enforces.
+ * Build a derive handle Proxy for one descriptor, at sub-ref `path`, through the
+ * SHARED `makeHandleProxy` (handle.ts) — the same guarded implementation the
+ * effect output handle uses (identifier-only segments, reserved keys,
+ * injection-proof). The derive base path is `output.result` (roadie's shape); a
+ * sub-ref appends `.summary` etc. The descriptor rides along as the handle's
+ * `meta`, read back by `deriveInfo`.
  */
 function makeHandle<R>(descriptor: DeriveDescriptor, path: readonly string[]): DeriveHandle<R> {
-  const target = {
-    __tdkRawRef: true as const,
-    __tdkDeriveHandle: true as const,
-    [HANDLE_INFO]: { descriptor, path } satisfies HandleInfo,
-    render(_resolve: RefResolver): string {
-      return renderHandle(descriptor, path);
-    },
-    toString(): string {
-      return renderHandle(descriptor, path);
-    },
+  const spec: HandleSpec = {
+    flags: ["__tdkRawRef", "__tdkDeriveHandle"],
+    render: (subPath) => `\${{ steps['${descriptor.name}'].output.result${subPath.map((s) => `.${s}`).join("")} }}`,
+    meta: descriptor,
+    label: `derive "${descriptor.name}"`,
+    injectionHint:
+      `Reshape the derive's return to use an identifier key, or read the value with an ` +
+      `explicit nj() expression instead.`,
   };
-  return new Proxy(target, {
-    get(t, prop, receiver) {
-      if (typeof prop === "symbol") return Reflect.get(t, prop, receiver);
-      if (OWN_MEMBERS.has(prop)) return Reflect.get(t, prop, receiver);
-      if (prop.startsWith("__") || RESERVED_KEYS.has(prop)) return undefined;
-      if (!SUBREF_SEGMENT.test(prop)) {
-        throw new Error(
-          `derive "${descriptor.name}": sub-ref key ${JSON.stringify(prop)} is not a plain identifier — ` +
-            `a sub-ref segment is spliced into the emitted \${{ }} path, so only ` +
-            `[A-Za-z_$][A-Za-z0-9_$]* keys are allowed. Reshape the derive's return to use an ` +
-            `identifier key, or read the value with an explicit nj() expression instead.`,
-        );
-      }
-      return makeHandle(descriptor, [...path, prop]);
-    },
-    // A handle is opaque data — refuse mutation so a stray write can't corrupt it.
-    set() {
-      return false;
-    },
-  }) as unknown as DeriveHandle<R>;
+  return makeHandleProxy(spec, path) as unknown as DeriveHandle<R>;
 }
 
 /** True for a derive handle (root or sub-ref). */
@@ -240,10 +165,12 @@ export function isDeriveHandle(value: unknown): value is DeriveMarker<unknown> {
   );
 }
 
-/** Read a handle's internal `{ descriptor, path }`; null for a non-handle. */
-function handleInfo(value: unknown): HandleInfo | null {
+/** Read a derive handle's internal `{ descriptor, path }`; null for a non-handle. */
+function deriveInfo(value: unknown): DeriveInfo | null {
   if (!isDeriveHandle(value)) return null;
-  return (value as unknown as { [HANDLE_INFO]?: HandleInfo })[HANDLE_INFO] ?? null;
+  const info = readHandleInfo(value);
+  if (!info) return null;
+  return { descriptor: info.meta as DeriveDescriptor, path: info.path };
 }
 
 /**
@@ -252,7 +179,7 @@ function handleInfo(value: unknown): HandleInfo | null {
  * `assertDifferentialJsonata`) and tooling; throws on a non-handle.
  */
 export function getDeriveExpr(handle: DeriveMarker<unknown>): JsonataExpr {
-  const info = handleInfo(handle);
+  const info = deriveInfo(handle);
   if (!info) throw new Error("getDeriveExpr: value is not a derive handle.");
   return info.descriptor.expr;
 }
@@ -400,8 +327,8 @@ function isRenderableRef(value: unknown): value is RawRef {
  * Conservative on purpose — an extra emitted step in an env that does not pick
  * that branch is harmless; a missing step in one that does is a broken artifact.
  */
-function forEachHandle(value: unknown, onHandle: (info: HandleInfo) => void): void {
-  const info = handleInfo(value);
+function forEachHandle(value: unknown, onHandle: (info: DeriveInfo) => void): void {
+  const info = deriveInfo(value);
   if (info) {
     onHandle(info);
     return;
@@ -428,7 +355,7 @@ function forEachHandle(value: unknown, onHandle: (info: HandleInfo) => void): vo
  */
 function collectReachable(roots: unknown[]): Map<string, DeriveDescriptor> {
   const reachable = new Map<string, DeriveDescriptor>();
-  const visit = (info: HandleInfo): void => {
+  const visit = (info: DeriveInfo): void => {
     const d = info.descriptor;
     const existing = reachable.get(d.name);
     if (existing) {
@@ -467,7 +394,7 @@ function depsOf(inputs: unknown[], reachable: Map<string, DeriveDescriptor>, man
     // the planner's; it adds no ordering constraint.
   };
   const scan = (value: unknown): void => {
-    const info = handleInfo(value);
+    const info = deriveInfo(value);
     if (info) {
       derives.add(info.descriptor.name);
       return;
@@ -561,14 +488,33 @@ function deriveStep(descriptor: DeriveDescriptor): Step {
 }
 
 /**
- * Order the combined graph of manual steps and reachable derives topologically.
- * Manual steps keep their declaration order (a chain of precedence edges); each
- * derive is placed after everything it references. Kahn's algorithm; among ready
- * nodes a ready DERIVE is emitted before a pending manual step (so a derive lands
- * just before the step that consumes it), manual steps break ties by declaration
- * order and derives by discovery order. A leftover set is a cycle — thrown, named.
+ * How the input steps constrain each other's order:
+ *   - `chainManual: true` (the v1 `steps:` list) — a HARD declaration-order chain
+ *     (step i precedes step i+1), so the authored order is preserved verbatim.
+ *   - `chainManual: false` (the v2 `effects:` list) — NO hard chain: declaration
+ *     order is only a tie-break among peers with no other constraint, and
+ *     data-dependency edges (one effect reads another's output) plus `after:`
+ *     edges (`extraEdges`) are the only hard ordering. This is what lets an
+ *     `after:` reorder two effects against declaration order without a cycle
+ *     (ADR-0025 §3 "after: overrides").
  */
-function topoOrder(manualSteps: Step[], reachable: Map<string, DeriveDescriptor>): Step[] {
+interface TopoOptions {
+  chainManual: boolean;
+  /** Extra hard precedence edges by step id: `[fromId, toId]` = from precedes to. */
+  extraEdges: ReadonlyArray<readonly [string, string]>;
+}
+
+/**
+ * Order the combined graph of input steps and reachable derives topologically.
+ * With `chainManual` the input steps keep their declaration order (a chain of
+ * precedence edges); without it, declaration order is a tie-break and only data
+ * dependencies + `after:` edges are hard. Each derive is placed after everything
+ * it references. Kahn's algorithm; among ready nodes a ready DERIVE is emitted
+ * before a pending step (so a derive lands just before the step that consumes
+ * it), steps break ties by declaration order and derives by discovery order. A
+ * leftover set is a cycle — thrown, named.
+ */
+function topoOrder(manualSteps: Step[], reachable: Map<string, DeriveDescriptor>, opts: TopoOptions): Step[] {
   const manualIds = new Set<string>();
   for (const s of manualSteps) if (s.id !== undefined) manualIds.add(s.id);
 
@@ -607,18 +553,35 @@ function topoOrder(manualSteps: Step[], reachable: Map<string, DeriveDescriptor>
     indeg.set(to, (indeg.get(to) ?? 0) + 1);
   };
 
-  // Manual declaration-order chain.
-  for (let i = 1; i < manualSteps.length; i++) {
-    addEdge(manualKey(manualSteps[i - 1]!, i - 1), manualKey(manualSteps[i]!, i));
+  // Declaration-order chain — v1 `steps:` only. v2 `effects:` leave declaration
+  // order to the ready-set tie-break, so `after:` can reorder peers freely.
+  if (opts.chainManual) {
+    for (let i = 1; i < manualSteps.length; i++) {
+      addEdge(manualKey(manualSteps[i - 1]!, i - 1), manualKey(manualSteps[i]!, i));
+    }
   }
-  // A manual step that references a derive → that derive precedes it.
+  // A step that references a derive → that derive precedes it. Without the hard
+  // chain (v2 effects), a step that references ANOTHER step's output needs an
+  // explicit data edge too — the chain used to imply it for the v1 list.
   manualSteps.forEach((s, i) => {
     const inputs: unknown[] = [];
     if (s.input !== undefined) inputs.push(s.input);
     if (s.if !== undefined) inputs.push(s.if);
     const deps = depsOf(inputs, reachable, manualIds);
     for (const dn of deps.derives) addEdge(`d:${dn}`, manualKey(s, i));
+    if (!opts.chainManual) {
+      for (const sid of deps.steps) {
+        const mk = idToManualKey.get(sid);
+        if (mk) addEdge(mk, manualKey(s, i));
+      }
+    }
   });
+  // Explicit `after:` edges (v2) — a hard "from precedes to" per effect id pair.
+  for (const [fromId, toId] of opts.extraEdges) {
+    const fk = idToManualKey.get(fromId);
+    const tk = idToManualKey.get(toId);
+    if (fk && tk) addEdge(fk, tk);
+  }
   // Each derive: its referenced derives / manual steps precede it.
   for (const [name, d] of reachable) {
     const deps = depsOf(Object.values(d.inputs), reachable, manualIds);
@@ -652,11 +615,21 @@ function topoOrder(manualSteps: Step[], reachable: Map<string, DeriveDescriptor>
   }
 
   if (ordered.length !== nodes.size) {
-    const leftover = [...nodes.keys()].filter((k) => (indeg.get(k) ?? 0) > 0).map((k) => k.replace(/^[md]:/, ""));
-    throw new Error(
-      `derive: dependency cycle among derived values / steps — no valid order exists for: ` +
-        `${leftover.join(", ")}. A derive cannot (transitively) depend on itself.`,
-    );
+    // Name each stuck member WITH its kind, and tailor the closing hint to the
+    // kinds actually involved: a cycle can be all derives (a derive reading
+    // itself transitively), all steps/effects (an `after:` contradicting a data
+    // dependency), or a mix — the old derive-only wording misdiagnosed the
+    // effect-only case.
+    const leftoverKeys = [...nodes.keys()].filter((k) => (indeg.get(k) ?? 0) > 0);
+    const leftover = leftoverKeys.map((k) => (k.startsWith("d:") ? `derive "${k.slice(2)}"` : `step "${k.slice(2)}"`));
+    const kinds = new Set(leftoverKeys.map((k) => (k.startsWith("d:") ? "derive" : "step")));
+    const hint =
+      kinds.size === 1 && kinds.has("derive")
+        ? "A derive cannot (transitively) depend on itself."
+        : kinds.size === 1
+          ? "Check the effects' data references and `after:` hints — together they demand an impossible order."
+          : "Check the references (and any `after:` hints) among these — together they demand an impossible order.";
+    throw new Error(`step-ordering cycle — no valid order exists for: ${leftover.join(", ")}. ${hint}`);
   }
   return ordered;
 }
@@ -675,12 +648,27 @@ function topoOrder(manualSteps: Step[], reachable: Map<string, DeriveDescriptor>
  * unreachable warning to THIS template's derives (see `attributableToForm`), so
  * a multi-template process never cross-contaminates diagnostics. Omitted (a
  * direct caller), every unreachable derive is reported.
+ *
+ * `opts` selects the ordering discipline for the input steps. The default is the
+ * v1 `steps:` list — a hard declaration-order chain, byte-stable. The v2
+ * `effects:` surface passes `{ chainManual: false, extraEdges }` so effect peers
+ * order by data-dependency + `after:` (declaration order only breaks ties).
  */
+export interface PlanOptions {
+  /** Hard declaration chain among input steps (v1 default true; v2 effects false). */
+  chainManual?: boolean;
+  /** Extra hard precedence edges by step id: `[fromId, toId]` — v2 `after:`. */
+  extraEdges?: ReadonlyArray<readonly [string, string]>;
+}
+
 export function planDerives(
   manualSteps: Step[],
   output?: Record<string, unknown>,
   ownRefs?: ReadonlySet<unknown>,
+  opts: PlanOptions = {},
 ): PlanResult {
+  const chainManual = opts.chainManual ?? true;
+  const extraEdges = opts.extraEdges ?? [];
   const roots: unknown[] = [];
   for (const step of manualSteps) {
     if (step.input !== undefined) roots.push(step.input);
@@ -703,10 +691,12 @@ export function planDerives(
     );
   }
 
-  // No derives → the manual steps are the plan, untouched.
-  if (reachable.size === 0) return { steps: manualSteps, diagnostics };
+  // v1 fast path: no derives AND the hard declaration chain → the input steps are
+  // the plan, untouched (byte-for-byte). v2 (`chainManual: false`) still runs the
+  // sort even with no derives, because `after:`/data edges may reorder effects.
+  if (chainManual && reachable.size === 0) return { steps: manualSteps, diagnostics };
 
-  // A derive name must not collide with a manual step id.
+  // A derive name must not collide with an input step id.
   const manualIds = new Set<string>();
   for (const s of manualSteps) if (s.id !== undefined) manualIds.add(s.id);
   for (const name of reachable.keys()) {
@@ -718,5 +708,5 @@ export function planDerives(
     }
   }
 
-  return { steps: topoOrder(manualSteps, reachable), diagnostics };
+  return { steps: topoOrder(manualSteps, reachable, { chainManual, extraEdges }), diagnostics };
 }

@@ -19,6 +19,7 @@ export { assertNoCrossEnvLeaks, compile, compileAll, compileResolved } from "./c
 export type {
   DefineTemplateConfig,
   DefineTemplateConfigWithLoad,
+  DefineTemplateV2Config,
   FieldRefs,
   LoadFn,
   ParamValues,
@@ -43,6 +44,13 @@ export type {
 // `${{ steps['<name>'].output.result }}` reference. Reachable derives compile to
 // `roadiehq:utils:jsonata` steps, topologically ordered with the manual steps.
 export { _resetDeriveRegistry, derive, getDeriveExpr, isDeriveHandle } from "./derive.ts";
+export type { EffectInputs, EffectInputValue, EffectOptions, EffectOutputMarker, OutputRef } from "./effects.ts";
+// Effects (authoring-v2 phase 3b, ADR-0025 Decision 3). `effect(id, action, opts)`
+// wraps a side-effectful step and returns a typed HANDLE whose `.output.<key>`
+// sub-refs render `${{ steps['<id>'].output.<key> }}`. `rawEffect(step)` wraps a
+// pre-built `Step` (the escape hatch). Effects are the v2 template's reachability
+// roots — collected and ordered by the same planner `derive` uses.
+export { EffectHandle, effect, isEffectHandle, rawEffect } from "./effects.ts";
 export type { EnvValues } from "./env.ts";
 // Environments / env.pick.
 export { _resetEnvRegistry, EnvPick, env, exclusiveValuesByEnv, isEnvPick } from "./env.ts";
@@ -128,6 +136,7 @@ export { fromYaml } from "./fromYaml.ts";
 export type {
   Branch,
   BranchBody,
+  BuildPageOptions,
   ColocatedPage,
   PageInput,
   PageObject,
