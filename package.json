@@ -12,7 +12,7 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "bun run --filter '*' typecheck",
-    "ci": "biome check . && bun run typecheck && bun test && bun run apps/cli/src/cli.ts test --ci",
+    "ci": "biome check . && bun run typecheck && bun run --filter '@tdk/docs' docs:build && bun test && bun run apps/cli/src/cli.ts test --ci",
     "format": "biome format --write .",
     "lint": "biome lint .",
     "check": "biome check --write ."
