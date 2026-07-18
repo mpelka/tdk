@@ -41,6 +41,13 @@ A `target` names the environment and where the output goes, for example
 `{ env: "test", outDir: "dist" }`. One template compiles to one artifact per
 target.
 
+Compile is also where the steps are **planned**. A template is authored as a dataflow
+graph — module-scope fields, computed `derive`s and side-effecting `effect`s that
+reference each other (see [Author a template](/guide/authoring)). At compile TDK walks
+that graph from the `effects` and the `output`, collects every step it reaches, and
+orders them so each value comes after everything it reads. The compiled `spec.steps`
+list can therefore hold more steps than the template names — the derives it generated.
+
 ### Execute — run level
 
 `execute(template, fixture)` simulates one run of a compiled template. Given
@@ -62,9 +69,11 @@ compile, with an error that names the mistake.
 
 These all throw at compile:
 
-- a `parameters` property whose value is not a `Param` (you forgot a `p.*` helper)
+- a `pages`/`parameters` property whose value is not a `Param` (you forgot a `p.*` helper)
 - a `showWhen` and a `dep.when` both targeting the same controller
 - a `showWhen` cycle, or a `showWhen` naming a controller that does not exist
+- a `derive` dependency cycle, or two derives sharing a name
+- a v2 config that also declares `steps:`/`parameters:` (the two shapes must not mix)
 - an `env.pick` marker or a resolver marker surviving unresolved into the artifact
 - an `extraSpec` key colliding with a field TDK already models under `spec`
 - a non-`"ga"` `lifecycle` with no `restrictedToUsers` (it fails closed)

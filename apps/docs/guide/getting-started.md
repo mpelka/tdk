@@ -33,7 +33,7 @@ cd <your template repo> && bun install   # node_modules/@tdk/core symlinks to th
 Template files then import cleanly:
 
 ```ts
-import { defineTemplate, p, step } from "@tdk/core";
+import { defineTemplate, effect, p, page } from "@tdk/core";
 ```
 
 When the registry is available, swap `link:@tdk/core` for a version range and run
@@ -53,30 +53,34 @@ cd my-templates
 
 ## Author a template
 
-A template is a plain value — no class, no `new`. `defineTemplate({...})` takes the
-metadata plus three parts: `parameters` (the form), `steps` (a function of the
-typed field-ref map `f`) and an optional `output` (same `f`):
+A template is a plain value — no class, no `new`. You author it as a graph of
+module-scope values: each field is a `const`, and `defineTemplate({...})` ties them
+together with the metadata, the `pages` (the form), the `effects` (the side-effectful
+steps) and an optional `output`:
 
 ```ts
-import { compile, defineTemplate, p, step } from "@tdk/core";
+import { compile, defineTemplate, effect, p, page } from "@tdk/core";
+
+const name = p.string({ title: "Name", required: true });
+
+const greet = effect("greet", "debug:log", { input: { message: name } });
 
 const Hello = defineTemplate({
   id: "hello",
   title: "Hello",
   type: "service",
-  parameters: {
-    name: p.string({ title: "Name", required: true }),
-  },
-  steps: (f) => [step("greet", "debug:log", { input: { message: f.name } })],
+  pages: [page("Details", { name })],
+  effects: [greet],
 });
 
 const { yaml } = compile(Hello, { env: "test", outDir: "dist" });
 ```
 
-`f.<name>` is the param's `.ref` (a value rendering <code v-pre>${{ parameters.&lt;name&gt; }}</code>),
-so it stays typed everywhere a step or output value goes. See
-[Author a template](/guide/authoring) for the full model — pages, conditional
-fields, lifecycle and the loud-error catalogue.
+Reference a field by the `const` itself (as `message: name` above — the effect
+normalizes it to its `.ref`), or by its `.ref` (a value rendering
+<code v-pre>${{ parameters.&lt;name&gt; }}</code>) inside an expression. See
+[Author a template](/guide/authoring) for the full model — computed derives, effect
+helpers, conditional fields, pages, lifecycle and the loud-error catalogue.
 
 ## First compile
 
