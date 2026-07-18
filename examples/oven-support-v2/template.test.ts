@@ -14,9 +14,10 @@
 //   - WHOLE-RUN: `assertExecuteAgainstGold` per scenario, and schema validity of
 //     both the compiled entity and the hand-written gold.
 
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
+  _resetDeriveRegistry,
   assertDifferentialJsonata,
   assertExecuteAgainstGold,
   assertValid,
@@ -32,6 +33,17 @@ import { OvenSupportRequestV2, problemSummary, slaHours, ticketTitle } from "./t
 const target = { env: "test", outDir: "" } as const;
 const gold = readFileSync(new URL("./gold-standard.yaml", import.meta.url), "utf8");
 
+// REGISTRY HYGIENE: the declared-derive registry is PROCESS-wide, and `bun test`
+// runs many files in one process, in a platform-dependent order. A PARAMLESS
+// derive left registered by an earlier-loaded file (e.g. the v1 oven-support
+// example's `oven-context`, whose inputs are nj markers only) is "vacuously
+// attributable" to EVERY template (the documented ambiguous-but-loud trade-off),
+// so it would surface in THIS template's diagnostics. Leave the registry clean
+// for later-loaded files too.
+afterAll(() => {
+  _resetDeriveRegistry();
+});
+
 /** Pull one gold step's JSONata `expression` by step id (trimmed). */
 function goldExpr(id: string): string {
   const steps = parse(gold).spec.steps as Array<{ id: string; input?: { expression?: string } }>;
@@ -41,6 +53,11 @@ function goldExpr(id: string): string {
 }
 
 describe("oven-support-v2 — structure & planning", () => {
+  // Isolate from foreign registry state BEFORE compiling: the no-diagnostics
+  // assertion below is about THIS template's derives, and a foreign paramless
+  // derive from an earlier-loaded test file would otherwise fail it on platforms
+  // whose file order loads that file first (the Linux CI failure on 5a492e5).
+  _resetDeriveRegistry();
   const { object, diagnostics } = compile(OvenSupportRequestV2, target);
 
   test("the effect and its three derives plan in order (derives, then the effect)", () => {

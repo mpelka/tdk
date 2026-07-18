@@ -4,7 +4,7 @@
 // inference, the escape hatch, `.when()` on effects, and the loud both-shapes /
 // missing-pages guards.
 
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { compile } from "./compile.ts";
 import { defineTemplate } from "./define.ts";
 import { _resetDeriveRegistry, derive } from "./derive.ts";
@@ -16,7 +16,13 @@ import { p } from "./params.ts";
 
 const target = { env: "test", outDir: "" } as const;
 
+// Fresh registry per test, and a clean registry left behind for LATER-loaded
+// test files (the registry is process-wide and test-file order is
+// platform-dependent — see derive.test.ts's hygiene note).
 beforeEach(() => {
+  _resetDeriveRegistry();
+});
+afterAll(() => {
   _resetDeriveRegistry();
 });
 

@@ -11,9 +11,10 @@
 //   - WHOLE-RUN: `assertExecuteAgainstGold` per scenario, and schema validity of
 //     both the compiled entity and the hand-written gold.
 
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
+  _resetDeriveRegistry,
   assertDifferentialJsonata,
   assertExecuteAgainstGold,
   assertValid,
@@ -46,6 +47,16 @@ import {
 const nonprod = { env: "test", outDir: "" } as const;
 const gold = readFileSync(new URL("./gold-standard.yaml", import.meta.url), "utf8");
 
+// REGISTRY HYGIENE: this template's `oven-context` derive has ONLY nj-marker
+// inputs (no params), so it is "vacuously attributable" to EVERY template — left
+// registered after this file, it would surface as an unreachable-derive
+// diagnostic in ANY later-loaded file's compile (the process-wide registry +
+// platform-dependent test-file order; the Linux CI failure on 5a492e5). Leave
+// the registry clean for later-loaded files.
+afterAll(() => {
+  _resetDeriveRegistry();
+});
+
 /** Pull one gold step's JSONata `expression` by step id (trimmed). */
 function goldExpr(id: string): string {
   const steps = parse(gold).spec.steps as Array<{ id: string; input?: { expression?: string } }>;
@@ -55,6 +66,10 @@ function goldExpr(id: string): string {
 }
 
 describe("oven-support — structure & planning", () => {
+  // Isolate from foreign registry state BEFORE compiling — the no-diagnostics
+  // assertion below is about THIS template's derives only (see the hygiene note
+  // at the top of the file).
+  _resetDeriveRegistry();
   const { object, diagnostics } = compile(OvenSupportRequest, nonprod);
 
   test("reachable derives interleave with manual steps in topological order", () => {
