@@ -1,8 +1,11 @@
-# HAND-WRITTEN ORACLE — the Delivery Slot Notifier's Scaffolder YAML as a Backstage
-# expert would author it. The Nunjucks expressions below are written directly (their
-# own idiom), NOT copied from the transpiler. The tests render BOTH the compiled and
-# these hand-written expressions with the real nunjucks engine and assert they
-# produce the same STRING for every fixture — value-equivalence, never byte-equality.
+# HAND-WRITTEN ORACLE — the Delivery Slot Notifier (AUTHORING-V2 shape) as a Backstage
+# expert would author it. Same BEHAVIOUR as the phase-3a fallback-chains, now the v2
+# form: pages-as-TOC (one page, inferred ui:order) and the two side-effectful steps as
+# an `effects:` list (an http lookup, then the notification). The Nunjucks expressions
+# below are written directly (their own idiom), NOT copied from the transpiler. The
+# tests render BOTH the compiled and these hand-written expressions with the real
+# nunjucks engine and assert the same STRING for every fixture — value-equivalence,
+# never byte-equality.
 apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
@@ -17,18 +20,24 @@ spec:
   type: service
   owner: team-bakery
   parameters:
-    properties:
-      requestedSlot:
-        type: string
-        title: Requested slot
-      contactName:
-        type: string
-        title: Contact name
-      urgency:
-        type: number
-        title: Urgency (1–5)
-    required:
-      - urgency
+    - title: Delivery
+      properties:
+        requestedSlot:
+          type: string
+          title: Requested slot
+        contactName:
+          type: string
+          title: Contact name
+        urgency:
+          type: number
+          title: Urgency (1–5)
+      # ui:order is INFERRED from the page map's source order (v2 surface).
+      ui:order:
+        - requestedSlot
+        - contactName
+        - urgency
+      required:
+        - urgency
   steps:
     - id: fetch-baker
       name: Fetch the assigned baker

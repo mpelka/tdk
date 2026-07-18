@@ -343,3 +343,15 @@ Options:
 Writes a bakery `template.ts`, its `__fixtures__/scenarios.ts`, a `tdk.config.ts` and
 the first snapshot baseline, then prints one `+ <path>` line per written file. See
 [Get started](/guide/getting-started) for the full walkthrough.
+
+The scaffolded `template.ts` is an **authoring-v2** starter (ADR-0025): its fields are
+module-scope consts across a two-page table of contents, a `derive` computes a value
+from them, and an `effect` is the side-effectful submit step whose typed handle the
+`output` reads. It compiles to a `roadiehq:utils:jsonata` step (the derive) plus the
+effect's own action step, with each page's `ui:order` inferred. The scenario mocks the
+effect's output, so `tdk test` in the new directory passes end to end immediately —
+edit the fields, derive and effect, then re-run `tdk test` to update the snapshot.
+
+A real project replaces the inline `effect(...)` with a typed helper its **pack**
+publishes (the scaffold shows the commented import), so the submit step reads as
+`placeOrder("place-order", { … })`.

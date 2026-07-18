@@ -53,8 +53,10 @@ const ctxFixtures: NotifierCtx[] = [
   },
 ];
 
-describe("delivery-slot-notifier — structure", () => {
-  test("two steps: the baker lookup then the notification", () => {
+describe("delivery-slot-notifier — structure & planning (v2)", () => {
+  test("two effects: the baker lookup then the notification (ordered by data ref)", () => {
+    // `notify` reads `fetch-baker`'s output in two nj expressions, so the planner
+    // orders it AFTER `fetch-baker` even though there is no hard step chain.
     expect(object.spec.steps.map((s) => ({ id: s.id, action: s.action }))).toEqual([
       { id: "fetch-baker", action: "http:backstage:request" },
       { id: "notify", action: "debug:log" },
@@ -63,6 +65,13 @@ describe("delivery-slot-notifier — structure", () => {
 
   test("the notify step carries the five fallback expressions", () => {
     expect(Object.keys(mineNotify).sort()).toEqual(["banner", "recipient", "region", "slot", "tier"]);
+  });
+
+  test("ui:order is inferred from the page's source order", () => {
+    const pages = object.spec.parameters as Array<{ title: string; "ui:order"?: string[] }>;
+    expect(pages.map((p) => ({ title: p.title, order: p["ui:order"] }))).toEqual([
+      { title: "Delivery", order: ["requestedSlot", "contactName", "urgency"] },
+    ]);
   });
 });
 

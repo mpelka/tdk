@@ -1,5 +1,14 @@
 // EXAMPLE 6 — "Oven Support Request": the derive (dataflow) stress test.
 //
+// ⚠️ DELIBERATELY V1 — the BEFORE half of the before/after pair with
+// `examples/oven-support-v2` (ADR-0025 phase 4, #19). This file authors the derive
+// shape with the v1 template surface (a `parameters` array of `page(...)`, a manual
+// `steps: () => [...]` list of `step(...)`, and a functional `output: () => ({...})`
+// reading steps via hand-written `nj(...)` markers). Its v2 twin — `oven-support-v2`
+// — authors the SAME behaviour with the full authoring-v2 surface (pages-as-TOC, an
+// `effects:` list, and handle-based `output`). Read the two side by side to see what
+// the v2 migration changes. NEITHER is migrated: the pair is the demonstration.
+//
 // The ADR-0025 oven-support shape, authored with `derive(name, inputs, fn)` — a
 // bakery raises an oven-support ticket in the service catalog. It exercises every
 // corner of phase-3a's derived-value planning:

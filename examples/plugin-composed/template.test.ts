@@ -38,8 +38,8 @@ beforeEach(() => {
   installOvenPlugin();
 });
 
-describe("oven-provisioner — structure + the composed field", () => {
-  test("two steps: the provision action then the record log", async () => {
+describe("oven-provisioner — structure + the composed field (v2)", () => {
+  test("two effects: the provision action (rawEffect) then the record log", async () => {
     const { object } = await compileResolved(OvenProvisioner, nonprod);
     expect(object.spec.steps.map((s) => ({ id: s.id, action: s.action }))).toEqual([
       { id: "provision", action: "bakery:provision-oven" },
@@ -49,14 +49,28 @@ describe("oven-provisioner — structure + the composed field", () => {
 
   test("HOOK B (field): cakePicker compiled to ui:field + ui:options", async () => {
     const { object } = await compileResolved(OvenProvisioner, nonprod);
-    const params = object.spec.parameters as {
-      properties: Record<string, Record<string, unknown>>;
-      required?: string[];
-    };
-    const model = params.properties.ovenModel!;
+    // v2 parameters is the pages array — the one page holds the fields.
+    const page = (
+      object.spec.parameters as Array<{ properties: Record<string, Record<string, unknown>>; required?: string[] }>
+    )[0]!;
+    const model = page.properties.ovenModel!;
     expect(model["ui:field"]).toBe("CakePickerWithDefault");
     expect(model["ui:options"]).toEqual({ path: "bakery/oven-models", default: "deck-3000" });
-    expect(params.required).toContain("ovenModel");
+    expect(page.required).toContain("ovenModel");
+  });
+
+  test("ui:order is inferred from the page's source order", async () => {
+    const { object } = await compileResolved(OvenProvisioner, nonprod);
+    const pages = object.spec.parameters as Array<{ title: string; "ui:order"?: string[] }>;
+    expect(pages.map((p) => ({ title: p.title, order: p["ui:order"] }))).toEqual([
+      { title: "Provision", order: ["station", "capacity", "ovenModel"] },
+    ]);
+  });
+
+  test("record reads the provisioned oven id BY HANDLE", async () => {
+    const { object } = await compileResolved(OvenProvisioner, nonprod);
+    const record = object.spec.steps[1]!.input as { ovenId: string };
+    expect(record.ovenId).toBe("${{ steps['provision'].output.ovenId }}");
   });
 });
 

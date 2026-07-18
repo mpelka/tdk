@@ -7,29 +7,50 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { runTemplateTest, snapshotPath } from "./test.ts";
 
-const INIT_TEMPLATE = `// A starter TDK template (scaffolded by \`tdk init\`). Edit the parameters and
-// steps, then \`tdk test\` snapshot-asserts its behavior and \`tdk build\`
-// compiles it for every target in tdk.config.ts.
+const INIT_TEMPLATE = `// A starter TDK template (scaffolded by \`tdk init\`), authored the AUTHORING-V2
+// way (ADR-0025): FIELDS are module-scope consts, a \`derive\` computes a value from
+// them, and an \`effect\` is the side-effectful submit step whose typed handle the
+// template \`output\` reads. Edit the fields, the derive and the effect, then
+// \`tdk test\` snapshot-asserts its behavior and \`tdk build\` compiles it for every
+// target in tdk.config.ts.
 
-import { defineTemplate, env, p, raw, step } from "@tdk/core";
+import { defineTemplate, derive, effect, p, page } from "@tdk/core";
+
+// --- Fields: module-scope consts (\`p.choice\` is the enum + labels sugar) --------
+const flavor = p.choice(
+  { vanilla: "Vanilla", chocolate: "Chocolate", "red-velvet": "Red velvet" },
+  { title: "Flavor", required: true },
+);
+const size = p.choice(["small", "medium", "large"], { title: "Size", required: true });
+const rush = p.boolean({ title: "Rush order?" });
+
+// --- A derived value: computed at runtime from the fields (a jsonata step) -------
+const orderSummary = derive("order-summary", { flavor, size }, (i) => \`\${i.size} \${i.flavor} cake\`);
+
+// --- The effect: the side-effectful submit step, returning a typed handle --------
+// In a real project a PACK publishes a typed helper for this action, so you write:
+//
+//   import { placeOrder } from "@your-org/bakery-pack";
+//   const order = placeOrder("place-order", { summary: orderSummary, rush });
+//
+// Here we call core's \`effect(...)\` directly. \`<{ orderId: string }>\` declares the
+// action's output shape, so \`order.output.orderId\` is a checked reference.
+const order = effect<{ orderId: string }>("place-order", "bakery:place-order", {
+  name: "Place the cake order",
+  input: { summary: orderSummary, rush },
+});
 
 export default defineTemplate({
   id: "cake-order",
   title: "Cake Order",
   description: "Order a cake from the bakery",
   type: "service",
-  parameters: {
-    flavor: p.string({ title: "Flavor", required: true }),
-  },
-  steps: (f) => [
-    step("bake", "debug:log", {
-      name: "Bake the cake",
-      input: {
-        oven: env.pick({ test: "test-oven", prod: "prod-oven" }),
-        message: raw\`Baking a \${f.flavor} cake!\`,
-      },
-    }),
-  ],
+  // Pages are the ordered table of contents; each page's ui:order is inferred.
+  pages: [page("Cake", { flavor, size }), page("Delivery", { rush })],
+  // Effects are the reachability roots; the derive is pulled in through the effect.
+  effects: [order],
+  // Output reads the effect's output BY HANDLE — no hand-written step reference.
+  output: { orderId: order.output.orderId },
 });
 `;
 
@@ -41,15 +62,17 @@ import type { ExecuteFixture } from "@tdk/core";
 interface Scenario {
   name: string;
   branches?: string[];
-  fixture: ExecuteFixture<{ flavor: string }>;
+  fixture: ExecuteFixture<{ flavor: string; size: string; rush?: boolean }>;
 }
 
 export const scenarios: Scenario[] = [
   {
-    name: "orders a chocolate cake",
+    name: "orders a large chocolate cake",
     fixture: {
-      parameters: { flavor: "chocolate" },
-      steps: { bake: { output: {} } },
+      // The \`order-summary\` derive is computed for real; the \`place-order\` effect
+      // is a non-jsonata action, so the scenario MOCKS its output.
+      parameters: { flavor: "chocolate", size: "large", rush: true },
+      steps: { "place-order": { output: { orderId: "ORD-1001" } } },
     },
   },
 ];
