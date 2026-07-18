@@ -269,6 +269,148 @@ number or boolean is written bare (`orElse(0)` → `default(0)`, `orElse(false)`
 `default(false)`). Call `.orElse` on any conditional field to resolve its
 possible absence before it reaches a step input or `output`.
 
+## `derive(name, inputs, fn)` — computed values
+
+A derived value is a cell in a spreadsheet. You write a formula over other cells,
+name it, and it recomputes itself from its inputs. `derive` is that cell for a
+template: a runtime-computed value defined as a function of fields and other
+derived values.
+
+```ts
+const slaHours = derive("sla-hours", { severity }, (i) =>
+  i.severity === "urgent" ? 4 : i.severity === "normal" ? 24 : 72,
+);
+```
+
+You pass three things:
+
+- a `name` — the step id, and the value's name everywhere it is used
+- an `inputs` object — the cells this value reads
+- a `fn` lambda — the formula, transpiled by the same TS→JSONata transpiler
+  `jsonata(...)` uses
+
+`derive` returns a typed handle. Use the handle anywhere a value goes — a step
+input, another derive's inputs, or `output`:
+
+```ts
+steps: () => [step("raise-ticket", "bakery:raise-ticket", { input: { slaHours } })],
+```
+
+At compile TDK does two things. It writes each reachable derive as a
+`roadiehq:utils:jsonata` step — the `data:` map from your `inputs`, the
+`expression:` from your lambda. And wherever you used the handle, it emits the
+reference for you:
+
+```yaml
+- id: sla-hours
+  action: roadiehq:utils:jsonata
+  input:
+    data:
+      severity: ${{ parameters.severity }}
+    expression: severity = "urgent" ? 4 : (severity = "normal" ? 24 : 72)
+- id: raise-ticket
+  action: bakery:raise-ticket
+  input:
+    slaHours: ${{ steps['sla-hours'].output.result }}
+```
+
+You never write the `${{ steps['sla-hours'].output.result }}` string, and you
+never write the `data:` map twice. Compare this with the hand-written form in
+[decision 2 of ADR-0025](/guide/decisions/0025-authoring-v2-dataflow-model),
+which states the same fields as a type and again as data.
+
+### The lambda's context is inferred
+
+You do not write a `Ctx` type. The lambda's context comes from the `inputs`
+object: each input maps to the value its cell holds. A field is its own type; a
+`sla-hours` reading `{ severity }` gets `i.severity` typed as the severity enum.
+
+Inputs can be:
+
+- a field, either the param const (`severity`) or its ref (`f.severity`)
+- another derive's handle, or a property of one (see sub-refs below)
+- an `nj(...)` marker, to read a manual step's output
+- a literal
+
+### A conditional field is typed as possibly absent
+
+A field with a `showWhen` (see [conditional fields](#showwhen-conditional-fields-declaratively))
+can be absent at runtime, so it types as `T | undefined` inside a derive. The
+lambda has to handle the absence:
+
+```ts
+// otherDetail is conditional, so i.otherDetail is `string | undefined`
+const problemSummary = derive("problem-summary", { problemArea, otherDetail }, (i) =>
+  i.problemArea === "other" ? i.otherDetail || "unspecified" : i.problemArea,
+);
+```
+
+Both ways of attaching the condition carry the `| undefined`: the
+`.showWhen(...)` method and the `showWhen:` option. One caveat: the option only
+carries it when you pass the options inline. An options object that travels
+through a variable whose type has `showWhen` optional still reveals the field at
+runtime, but types as `T` — pass the options inline, or use the method.
+
+### Sub-refs — reading one field of an object-typed value
+
+When a derive returns an object, its handle exposes a typed handle per property.
+Reading `jira.summary` gives a reference to that field:
+
+```ts
+const jira = derive("jira", { ... }, (i) => ({ summary: "...", id: "..." }));
+// jira.summary → ${{ steps['jira'].output.result.summary }}, typed as its field
+```
+
+Sub-refs work one property at a time on object results, with these limits:
+
+- arrays expose no per-element sub-ref — use the whole array handle
+- a property named `render`, `toString`, `then`, `catch`, `finally`, `toJSON`,
+  `valueOf`, `constructor`, `prototype`, or any `__`-prefixed name is not
+  reachable as a sub-ref — the type omits it, so reaching one is a compile error
+- a sub-ref key must be a plain identifier (letters, digits, `_`, `$`, not
+  starting with a digit) — the key is spliced into the emitted `${{ }}` path, so
+  any other key throws at the access site
+- enumeration is asymmetric: `'a' in handle` is `false` and `Object.keys` lists
+  only the marker's own members — sub-refs exist on access, not as own
+  properties
+
+### How the steps are ordered
+
+TDK collects every derive reachable from the manual steps and the `output`, then
+orders the whole graph so each value comes after everything it reads. Manual
+steps keep the order you wrote them in. A derive that reads a manual step's
+output lands between that step and the step that reads the derive:
+
+```
+oven-lookup (manual) → oven-context (derive) → register (manual)
+```
+
+Three conditions stop the compile or warn you:
+
+- a dependency cycle among derives is a compile error, naming the cycle
+- two derives sharing a name is a compile error — names are unique per template
+- a declared derive that nothing reaches is left out, with a warning on
+  `CompileResult.diagnostics` — it is never dropped in silence
+
+A derive imported into two templates gets its own step in each. Names are unique
+per template, not across the workspace.
+
+### The step name
+
+The `name` is the step id and the value's name. TDK also shows it in the
+Backstage run log, title-cased: `"sla-hours"` becomes `Sla Hours`. Pass a
+`{ name }` option for a phrase the log should read as written:
+
+```ts
+derive("sla-hours", { severity }, (i) => ..., { name: "Work out the support SLA" });
+```
+
+### Testing a derived value
+
+In `execute()` scenarios, a fixture mock on a derive's step id is ignored —
+`roadiehq:utils:jsonata` steps always evaluate their expression directly. Mock
+the derive's inputs instead: the upstream steps and parameters it reads.
+
 ## Multi-page forms and conditional dependencies
 
 A real Scaffolder form is multi-page with conditional fields. Pass an array of

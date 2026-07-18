@@ -30,6 +30,19 @@ export type {
 // `defineTemplate({...})` authors a template without a class; `step(...)` builds
 // a step; the colocated `page(title, props)` form lives in ./pages.ts.
 export { defineTemplate, step } from "./define.ts";
+export type {
+  DeriveContext,
+  DeriveHandle,
+  DeriveInputs,
+  DeriveMarker,
+  DeriveOptions,
+} from "./derive.ts";
+// Derived values (authoring-v2 phase 3a, ADR-0025 Decision 2). `derive(name,
+// inputs, fn)` declares a runtime-computed value as a dataflow node: its lambda
+// is transpiled like `jsonata()`, and consuming its typed HANDLE auto-wires the
+// `${{ steps['<name>'].output.result }}` reference. Reachable derives compile to
+// `roadiehq:utils:jsonata` steps, topologically ordered with the manual steps.
+export { _resetDeriveRegistry, derive, getDeriveExpr, isDeriveHandle } from "./derive.ts";
 export type { EnvValues } from "./env.ts";
 // Environments / env.pick.
 export { _resetEnvRegistry, EnvPick, env, exclusiveValuesByEnv, isEnvPick } from "./env.ts";
@@ -127,6 +140,7 @@ export type {
   BaseParamOptions,
   BooleanParamOptions,
   ChoiceOptions,
+  ConditionalBrand,
   CustomFieldOptions,
   EnumParamOptions,
   JsonSchema,

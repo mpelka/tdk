@@ -72,6 +72,12 @@ export interface CompileResult {
   object: TemplateEntity;
   /** The same entity serialized to YAML. */
   yaml: string;
+  /**
+   * Non-fatal compile diagnostics carried up from building the form — e.g. a
+   * declared-but-unreachable `derive` (ADR-0025). Present only when non-empty;
+   * the emitted YAML is identical whether or not diagnostics were produced.
+   */
+  diagnostics?: string[];
 }
 
 /**
@@ -142,7 +148,12 @@ export function compile(
   }
 
   // lineWidth: 0 disables line wrapping so `${{ ... }}` expressions stay intact.
-  return { object: entity, yaml: stringify(entity, { lineWidth: 0 }) };
+  const result: CompileResult = { object: entity, yaml: stringify(entity, { lineWidth: 0 }) };
+  // Surface any non-fatal diagnostics the form build produced (unreachable
+  // derives). Never present unless something was reported — so the common result
+  // shape is unchanged.
+  if (form.diagnostics?.length) result.diagnostics = form.diagnostics;
+  return result;
 }
 
 /**

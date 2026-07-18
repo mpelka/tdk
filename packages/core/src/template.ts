@@ -5,11 +5,12 @@
 // `build()` returning steps, and an optional `output`. Compile turns this into a
 // Backstage Template entity, once per deploy target.
 
+import { planDerives } from "./derive.ts";
 import type { EnvPick } from "./env.ts";
 import type { RawExpr, RawRef } from "./expr/index.ts";
 import type { JsonataExpr } from "./expr/jsonata/index.ts";
 import type { NunjucksExpr } from "./expr/nunjucks/index.ts";
-import type { PageInput } from "./pages.ts";
+import type { Dependency, PageInput } from "./pages.ts";
 import { bindPageNames } from "./pages.ts";
 import type { ParamMap } from "./params.ts";
 import { ParamBase } from "./params.ts";
@@ -75,6 +76,36 @@ export type InputValue =
   | InputValue[]
   | { [key: string]: InputValue };
 
+/**
+ * Collect the `.ref` of every param a form declares — the flat map, every page's
+ * properties, and the params inside `dep.when` branches (recursively). The set
+ * scopes the unreachable-derive warning to the compiling template: a derive's
+ * inputs carry these SAME memoized ref instances, so identity membership says
+ * "this derive reads MY form" (see derive.ts `attributableToForm`).
+ */
+export function collectFormParamRefs(params: ParamMap, pages?: PageInput[]): Set<unknown> {
+  const refs = new Set<unknown>();
+  const addMap = (map: ParamMap): void => {
+    for (const value of Object.values(map)) {
+      if (value instanceof ParamBase) refs.add(value.ref);
+    }
+  };
+  const walkDeps = (deps: Dependency[]): void => {
+    for (const d of deps) {
+      for (const branch of d.branches) {
+        if (branch.properties) addMap(branch.properties);
+        if (branch.dependencies) walkDeps(branch.dependencies);
+      }
+    }
+  };
+  addMap(params);
+  for (const pg of pages ?? []) {
+    addMap(pg.properties);
+    if (pg.dependencies) walkDeps(pg.dependencies);
+  }
+  return refs;
+}
+
 /** A single scaffolder step as authored in `build()`. */
 export interface Step {
   id?: string;
@@ -106,6 +137,12 @@ export interface BuiltForm {
   steps: Step[];
   /** The `spec.output` map, if any. */
   output?: Record<string, InputValue>;
+  /**
+   * Non-fatal compile diagnostics produced while building the form — e.g. a
+   * declared-but-unreachable `derive`. Surfaced on `CompileResult.diagnostics`;
+   * never affects the emitted YAML. Absent when there is nothing to report.
+   */
+  diagnostics?: string[];
 }
 
 /**
@@ -171,7 +208,15 @@ export abstract class Template {
    */
   builtForm(): BuiltForm {
     this.bindParamNames();
-    return { params: this.params, pages: this.pages, steps: this.build(), output: this.output };
+    // Plan the steps: interleave any reachable `derive(...)` values (as roadie
+    // jsonata steps) with the built manual steps, topologically. A template with
+    // no derives gets its manual steps back unchanged (see `planDerives`). The
+    // form's own param refs scope the unreachable-derive warning to THIS template.
+    const ownRefs = collectFormParamRefs(this.params, this.pages);
+    const { steps, diagnostics } = planDerives(this.build(), this.output, ownRefs);
+    const form: BuiltForm = { params: this.params, pages: this.pages, steps, output: this.output };
+    if (diagnostics.length) form.diagnostics = diagnostics;
+    return form;
   }
 
   /**

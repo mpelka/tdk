@@ -1,8 +1,9 @@
 # 25. Authoring v2: the dataflow model
 
-- Status: Proposed — the design later implementation phases build against. The naming
-  pick in this record awaits the maintainer's ratification at review.
+- Status: Accepted — the design later implementation phases build against.
 - Date: 2026-07-18
+- Ratified: 2026-07-18 — the maintainer ratified `derive` as the computed-value verb
+  (over `computed`); phase 3 builds against it.
 
 ## Context
 

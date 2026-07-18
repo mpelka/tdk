@@ -34,7 +34,7 @@ execute — is defined in the contributor guide.
 | 0021 | 2026-06-28 | [Pure-TypeScript authoring, no JSX](/guide/decisions/0021-pure-typescript-authoring-no-jsx) | Accepted |
 | 0022 | 2026-06-29 | [Functional defineTemplate over class](/guide/decisions/0022-functional-definetemplate-over-class) | Accepted |
 | 0024 | 2026-06-29 | [The load() shape: env-aware, parameters-only](/guide/decisions/0024-load-shape-env-aware-parameters-only) | Accepted |
-| 0025 | 2026-07-18 | [Authoring v2: the dataflow model](/guide/decisions/0025-authoring-v2-dataflow-model) | Proposed |
+| 0025 | 2026-07-18 | [Authoring v2: the dataflow model](/guide/decisions/0025-authoring-v2-dataflow-model) | Accepted |
 
 ## Toolchain
 

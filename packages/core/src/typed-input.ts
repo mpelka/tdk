@@ -30,6 +30,7 @@
 // step input; phase 1 only makes them expressible.
 
 import type { Ref } from "./define.ts";
+import type { DeriveMarker } from "./derive.ts";
 import type { EnvPick } from "./env.ts";
 import type { RawExpr } from "./expr/index.ts";
 import type { JsonataExpr } from "./expr/jsonata/index.ts";
@@ -46,6 +47,8 @@ import type { Resolvable } from "./resolve.ts";
  *     `Ref<number>` is not a `Ref<string>` (and the bare `ParamRef` base, which
  *     lacks the phantom, is no `Ref` at all — see `UntypedInputMarker`).
  *   - `EnvPick<T>` — `values: Record<string, T>` differs by `T`.
+ *   - `DeriveMarker<V>` — a `derive(...)` handle; its REQUIRED `__tdkResultType`
+ *     phantom differs by `V`, so a handle rendering the wrong type is rejected.
  *
  * The `Ctx` of the two expression markers stays `any` on purpose (as the loose
  * `InputValue` does): `fn` is contravariant in `Ctx`, so a concrete
@@ -58,7 +61,8 @@ export type TypedMarker<V> =
   // biome-ignore lint/suspicious/noExplicitAny: variance — Ctx must stay `any` to accept any concrete NunjucksExpr<Ctx,V> (Ctx is contravariant in fn); V is the constrained result.
   | NunjucksExpr<any, V>
   | Ref<V>
-  | EnvPick<V>;
+  | EnvPick<V>
+  | DeriveMarker<V>;
 
 /**
  * The escape-hatch markers that carry NO static result type, and so are accepted
@@ -118,16 +122,18 @@ export type TypedInputValue<V> =
  * `RawExpr` / `Resolvable`, an untyped `ParamRef`) widens to `unknown`, which is
  * the honest "author must narrow this" signal.
  */
-export type MarkerValue<M> = [M] extends [Ref<infer T>]
-  ? T
-  : // biome-ignore lint/suspicious/noExplicitAny: match any concrete JsonataExpr<Ctx,R> and read R (Ctx is irrelevant to extraction).
-    [M] extends [JsonataExpr<any, infer R>]
-    ? R
-    : // biome-ignore lint/suspicious/noExplicitAny: match any concrete NunjucksExpr<Ctx,R> and read R (Ctx is irrelevant to extraction).
-      [M] extends [NunjucksExpr<any, infer R>]
+export type MarkerValue<M> = [M] extends [DeriveMarker<infer R>]
+  ? R
+  : [M] extends [Ref<infer T>]
+    ? T
+    : // biome-ignore lint/suspicious/noExplicitAny: match any concrete JsonataExpr<Ctx,R> and read R (Ctx is irrelevant to extraction).
+      [M] extends [JsonataExpr<any, infer R>]
       ? R
-      : [M] extends [EnvPick<infer T>]
-        ? T
-        : [M] extends [string | number | boolean | null]
-          ? M
-          : unknown;
+      : // biome-ignore lint/suspicious/noExplicitAny: match any concrete NunjucksExpr<Ctx,R> and read R (Ctx is irrelevant to extraction).
+        [M] extends [NunjucksExpr<any, infer R>]
+        ? R
+        : [M] extends [EnvPick<infer T>]
+          ? T
+          : [M] extends [string | number | boolean | null]
+            ? M
+            : unknown;
