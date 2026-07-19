@@ -21,12 +21,27 @@
   "definitions": {
     "scalarValue": { "type": ["string", "number", "boolean"] },
     "jsonValue": {},
+    "identifierName": {
+      "type": "string",
+      "description": "A name that becomes an emitted identifier + step id: no control characters, line terminators, or backticks.",
+      "pattern": "^[^\\u0000-\\u001F\\u007F\\u2028\\u2029\\u0060]+$"
+    },
+    "safeText": {
+      "type": "string",
+      "description": "Single-line text emitted into comments: no control characters or line terminators.",
+      "pattern": "^[^\\u0000-\\u001F\\u007F\\u2028\\u2029]*$"
+    },
+    "templateId": {
+      "type": "string",
+      "description": "A template id that also becomes an output directory name: no controls, line terminators, or path separators.",
+      "pattern": "^[^\\u0000-\\u001F\\u007F\\u2028\\u2029/\\\\]+$"
+    },
     "templateMeta": {
       "type": "object",
       "required": ["id", "title"],
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
+        "id": { "$ref": "#/definitions/templateId" },
         "title": { "type": "string", "minLength": 1 },
         "description": { "type": "string" },
         "type": { "type": "string" },
@@ -39,7 +54,7 @@
       "required": ["name", "type", "page"],
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
+        "name": { "$ref": "#/definitions/identifierName" },
         "type": { "enum": ["string", "choice", "boolean", "number", "array"] },
         "title": { "type": "string" },
         "description": { "type": "string" },
@@ -111,7 +126,7 @@
           "properties": {
             "op": { "const": "fieldRef" },
             "field": { "type": "string" },
-            "name": { "type": "string" }
+            "name": { "$ref": "#/definitions/identifierName" }
           }
         },
         {
@@ -121,7 +136,7 @@
           "properties": {
             "op": { "const": "literal" },
             "value": { "$ref": "#/definitions/jsonValue" },
-            "name": { "type": "string" }
+            "name": { "$ref": "#/definitions/identifierName" }
           }
         },
         {
@@ -131,7 +146,7 @@
           "properties": {
             "op": { "const": "logicRef" },
             "ref": { "type": "string" },
-            "name": { "type": "string" }
+            "name": { "$ref": "#/definitions/identifierName" }
           }
         },
         {
@@ -141,7 +156,7 @@
           "properties": {
             "op": { "const": "lookupRef" },
             "ref": { "type": "string" },
-            "name": { "type": "string" }
+            "name": { "$ref": "#/definitions/identifierName" }
           }
         },
         {
@@ -151,7 +166,7 @@
           "properties": {
             "op": { "const": "concat" },
             "parts": { "type": "array", "items": { "$ref": "#/definitions/logicExpr" } },
-            "name": { "type": "string" }
+            "name": { "$ref": "#/definitions/identifierName" }
           }
         },
         {
@@ -165,7 +180,7 @@
               "type": "object",
               "additionalProperties": { "$ref": "#/definitions/logicExpr" }
             },
-            "name": { "type": "string" }
+            "name": { "$ref": "#/definitions/identifierName" }
           }
         },
         {
@@ -176,7 +191,7 @@
             "op": { "const": "conditional" },
             "cases": { "type": "array", "items": { "$ref": "#/definitions/conditionalCase" } },
             "else": { "$ref": "#/definitions/logicExpr" },
-            "name": { "type": "string" }
+            "name": { "$ref": "#/definitions/identifierName" }
           }
         },
         {
@@ -188,7 +203,7 @@
             "source": { "$ref": "#/definitions/logicExpr" },
             "as": { "type": "string" },
             "body": { "$ref": "#/definitions/logicExpr" },
-            "name": { "type": "string" }
+            "name": { "$ref": "#/definitions/identifierName" }
           }
         }
       ]
@@ -199,7 +214,7 @@
       "required": ["name", "kind", "language", "source"],
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
+        "name": { "$ref": "#/definitions/identifierName" },
         "kind": { "const": "expression" },
         "language": { "enum": ["jsonata", "nunjucks", "scaffolder"] },
         "source": { "type": "string" }
@@ -260,9 +275,9 @@
       "required": ["name", "kind", "source"],
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "kind": { "type": "string" },
-        "source": { "type": "string" },
+        "name": { "$ref": "#/definitions/identifierName" },
+        "kind": { "$ref": "#/definitions/safeText" },
+        "source": { "$ref": "#/definitions/safeText" },
         "params": {
           "type": "object",
           "additionalProperties": { "$ref": "#/definitions/valueRef" }
@@ -275,9 +290,9 @@
       "required": ["name", "kind", "actionRef"],
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "kind": { "type": "string" },
-        "actionRef": { "type": "string" },
+        "name": { "$ref": "#/definitions/identifierName" },
+        "kind": { "$ref": "#/definitions/safeText" },
+        "actionRef": { "$ref": "#/definitions/safeText" },
         "inputs": {
           "type": "object",
           "additionalProperties": { "$ref": "#/definitions/valueRef" }

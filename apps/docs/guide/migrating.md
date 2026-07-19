@@ -323,6 +323,12 @@ scenario engine and write the first snapshot baseline.
 tdk test ./templates/request-oven-maintenance
 ```
 
+The printer generates one happy-path scenario, filled from the `exampleValue`s, with
+a `branches` list naming the conditional reveals it exercises and each effect output
+mocked. This is a starting baseline you extend: add a scenario per branch you want to
+pin. (ADR-0026 sketches one generated scenario per visibleWhen branch; the printer
+currently emits the single baseline instead, pending an ADR amendment.)
+
 Gate 3 confirms the rest against a real instance — the behaviour the earlier gates
 cannot see.
 

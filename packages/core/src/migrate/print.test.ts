@@ -169,6 +169,15 @@ describe("printTemplate — the ADR-0026 worked example", () => {
     expect(report.counts).toEqual({ translated: 6, flagged: 1 });
     expect(report.flagged[0].construct).toBe("lookup");
   });
+
+  // DIVERGENCE (documented, pending ADR amendment): ADR-0026 sketches one generated
+  // scenario per visibleWhen branch. The printer emits a SINGLE happy-path scenario
+  // with a `branches` list instead — see the rationale in print.ts renderScenariosFile.
+  test("the ADR model generates the single baseline scenario (documented divergence)", () => {
+    const scenarios = printTemplate(adrModel, { mapping: adrMapping }).files["__fixtures__/scenarios.ts"];
+    expect(scenarios).toContain('name: "example — happy path"');
+    expect(scenarios).toContain('branches: ["other"]');
+  });
 });
 
 describe("printTemplate — no mapping (usable on day one)", () => {

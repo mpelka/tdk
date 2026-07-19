@@ -120,9 +120,28 @@ function escapeTemplate(text: string): string {
   return text.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${");
 }
 
-/** A `// --- <title> ` banner padded with dashes to a fixed width. */
+/**
+ * Make a string safe to interpolate into a SINGLE `//` comment line: every control
+ * character and JS line terminator (\n \r U+2028 U+2029) becomes a space, so nothing
+ * can break out of the comment and inject code. The injection guard, mirroring the
+ * validator's rejection (defense in depth).
+ */
+function commentSafe(text: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: the point is to strip them.
+  return text.replace(/[\u0000-\u001F\u007F\u2028\u2029]/g, " ");
+}
+
+/**
+ * Split a possibly MULTI-LINE value (an escape-hatch source) into comment lines,
+ * splitting on ALL JS line terminators and sanitizing each line. Prefixes each line.
+ */
+function commentSafeLines(text: string, prefix: string): string[] {
+  return text.split(/\r\n|[\n\r\u2028\u2029]/).map((line) => prefix + commentSafe(line));
+}
+
+/** A `// --- <title> ` banner padded with dashes to a fixed width (title sanitized). */
 function banner(title: string): string {
-  const head = `// --- ${title} `;
+  const head = `// --- ${commentSafe(title)} `;
   const pad = Math.max(0, 84 - head.length);
   return head + "-".repeat(pad);
 }
@@ -414,9 +433,9 @@ class Printer {
       `// TODO(migration): the model could not express this in the logic IR, so its`,
       `//   source is preserved verbatim. Re-author it as a derive (or wire it into the`,
       `//   right step) before relying on it. See migration-report.json.`,
-      `//   language: ${node.language}`,
-      ...node.source.split("\n").map((l) => `//   source: ${l}`),
-      `const ${c} = raw\`TODO(migration) unported expression: ${node.name}\`;`,
+      `//   language: ${commentSafe(node.language)}`,
+      ...commentSafeLines(node.source, "//   source: "),
+      `const ${c} = raw\`TODO(migration) unported expression: ${escapeTemplate(node.name)}\`;`,
     ];
     return lines.join("\n");
   }
@@ -430,7 +449,7 @@ class Printer {
     if (map) {
       this.addOrgImport(map.import);
       this.orgImportNotes.push(
-        `// Resolver convention (org-supplied): ${lookup.kind} lookups -> the ${map.import.name} marker.`,
+        `// Resolver convention (org-supplied): ${commentSafe(lookup.kind)} lookups -> the ${commentSafe(map.import.name)} marker.`,
       );
       this.flagged.push({
         construct: "lookup",
@@ -444,7 +463,7 @@ class Printer {
       const lines = [
         banner(`Lookup '${lookup.name}' — FLAGGED, see migration-report.json`),
         `// TODO(migration): external reference preserved verbatim from the legacy export.`,
-        `//   source: ${lookup.source}`,
+        `//   source: ${commentSafe(lookup.source)}`,
         `// Emitted against the org's resolver convention. VERIFY the resolver exists and`,
         `// returns the expected shape before you rely on it.`,
         `const ${c} = ${map.import.name}(${paramsSrc});`,
@@ -468,9 +487,9 @@ class Printer {
       `// TODO(migration): external reference preserved verbatim; no resolver mapping was`,
       `//   supplied, so this is a placeholder. Wire it to your org's resolver marker,`,
       `//   then replace the placeholder. See migration-report.json.`,
-      `//   kind: ${lookup.kind}`,
-      `//   source: ${lookup.source}`,
-      `const ${c} = raw\`TODO(migration) unresolved lookup: ${lookup.name}\`;`,
+      `//   kind: ${commentSafe(lookup.kind)}`,
+      `//   source: ${commentSafe(lookup.source)}`,
+      `const ${c} = raw\`TODO(migration) unresolved lookup: ${escapeTemplate(lookup.name)}\`;`,
     ];
     return lines.join("\n");
   }
@@ -495,7 +514,9 @@ class Printer {
     const map = this.mapping.actions?.[effect.actionRef];
     if (map) {
       this.addOrgImport(map.import);
-      this.orgImportNotes.push(`// Action mapping (org-supplied): ${effect.actionRef} -> ${map.import.name}.`);
+      this.orgImportNotes.push(
+        `// Action mapping (org-supplied): ${commentSafe(effect.actionRef)} -> ${commentSafe(map.import.name)}.`,
+      );
       this.translated++;
       const lines = [
         banner(`Effect '${effect.name}' via the mapped pack helper`),
@@ -517,7 +538,7 @@ class Printer {
     });
     const lines = [
       banner(`Effect '${effect.name}' — FLAGGED, unmapped legacy action`),
-      `// TODO(migration): unmapped legacy action ${effect.actionRef}.`,
+      `// TODO(migration): unmapped legacy action ${commentSafe(effect.actionRef)}.`,
       `//   Supply an action mapping (actionRef -> a pack helper) to emit a typed helper`,
       `//   call, or keep this direct effect() and confirm the action id + input shape.`,
       `export const ${c} = effect(${lit(effect.name)}, ${lit(effect.actionRef)}, { input: ${inputsSrc} })${whenSrc};`,
@@ -650,6 +671,14 @@ class Printer {
 
   // --- scenarios ---
 
+  // DIVERGENCE from ADR-0026: the ADR sketches "one scenario per visibleWhen branch".
+  // We emit a SINGLE happy-path scenario (with a `branches` list naming the reveals it
+  // exercises) rather than enumerating branches. A faithful per-branch enumerator is
+  // genuinely gnarly — "branch" is ambiguous (visible-only vs visible+hidden vs
+  // per-controller-value), controllers interact (revealing one field can hide another),
+  // and when the exampleValues already reveal every conditional (the common case, and
+  // the ADR's own worked example) the extra scenarios are near-duplicates. The single
+  // baseline is born-testable and the author extends it. Tracked for an ADR amendment.
   private renderScenariosFile(): string {
     const questions = this.model.questions ?? [];
 

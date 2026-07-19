@@ -328,19 +328,102 @@ function semanticChecks(model: MigrationModel, errors: ModelError[]): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Forbidden-character checks — the emitted-code injection guard.
+//
+// Model string fields flow into the printer's OUTPUT: names become identifiers and
+// step ids, and `kind`/`source`/`actionRef` are interpolated into `//` comments and
+// `raw` placeholders. A control character, a JS line terminator (\n \r U+2028 U+2029),
+// or a backtick can break out of a comment or a template literal and inject code that
+// still PARSES. The schema patterns reject these; this pass gives the producer the
+// friendly, precise message that names the field and says what to strip. (Defense in
+// depth also lives in the printer, which sanitizes every interpolation.)
+// ---------------------------------------------------------------------------
+
+/** A control character, DEL, or a JS line/paragraph separator. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters IS the point (to reject them).
+const CONTROL_OR_TERMINATOR = /[\u0000-\u001F\u007F\u2028\u2029]/;
+/** The above, plus a backtick (names become identifiers/step ids). */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters IS the point (to reject them).
+const NAME_FORBIDDEN = /[\u0000-\u001F\u007F\u2028\u2029`]/;
+/** The above, plus path separators (a template id becomes a directory name). */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters IS the point (to reject them).
+const ID_FORBIDDEN = /[\u0000-\u001F\u007F\u2028\u2029/\\]/;
+
+const NAME_MSG =
+  "contains a control character, line break, or backtick — a name becomes an identifier and step id, so use only printable single-line text";
+const TEXT_MSG =
+  "contains a control character or line break — this is emitted single-line; strip line breaks and control characters";
+const ID_MSG =
+  "contains a control character, line break, or path separator — a template id becomes a directory name; use printable single-line text without / or \\";
+
+function checkForbiddenChars(doc: unknown, errors: ModelError[]): void {
+  if (!doc || typeof doc !== "object") return;
+  const model = doc as Record<string, unknown>;
+
+  const name = (v: unknown, path: string) => {
+    if (typeof v === "string" && NAME_FORBIDDEN.test(v)) errors.push({ path, message: NAME_MSG });
+  };
+  const text = (v: unknown, path: string) => {
+    if (typeof v === "string" && CONTROL_OR_TERMINATOR.test(v)) errors.push({ path, message: TEXT_MSG });
+  };
+
+  const template = model.template as Record<string, unknown> | undefined;
+  if (typeof template?.id === "string" && ID_FORBIDDEN.test(template.id)) {
+    errors.push({ path: "template.id", message: ID_MSG });
+  }
+
+  if (Array.isArray(model.questions)) {
+    model.questions.forEach((q, i) => {
+      name((q as Record<string, unknown>)?.name, `questions[${i}].name`);
+    });
+  }
+  if (Array.isArray(model.logic)) {
+    model.logic.forEach((n, i) => {
+      const node = n as Record<string, unknown>;
+      name(node?.name, `logic[${i}].name`);
+      // An escape-hatch `source` is deliberately allowed to be multi-line; the printer
+      // splits it safely into comment lines. Only its NAME is an identifier.
+    });
+  }
+  if (Array.isArray(model.lookups)) {
+    model.lookups.forEach((l, i) => {
+      const lk = l as Record<string, unknown>;
+      name(lk?.name, `lookups[${i}].name`);
+      text(lk?.kind, `lookups[${i}].kind`);
+      text(lk?.source, `lookups[${i}].source`);
+    });
+  }
+  if (Array.isArray(model.effects)) {
+    model.effects.forEach((e, i) => {
+      const ef = e as Record<string, unknown>;
+      name(ef?.name, `effects[${i}].name`);
+      text(ef?.kind, `effects[${i}].kind`);
+      text(ef?.actionRef, `effects[${i}].actionRef`);
+    });
+  }
+}
+
 /**
- * Validate a migration model. Runs the JSON Schema first (a shape error stops here,
- * so the semantic pass never walks a malformed document); a schema-valid model then
- * gets the semantic checks. Returns `{ valid, errors }`; format the errors with
+ * Validate a migration model. The forbidden-character guard runs FIRST and always
+ * (defensively, even on a malformed doc), so a producer gets the friendly injection
+ * message. Then the JSON Schema runs; a schema-valid model additionally gets the
+ * reference/semantic checks. Returns `{ valid, errors }`; format with
  * `formatModelErrors`.
  */
 export function validateModel(doc: unknown): ValidateModelResult {
+  const charErrors: ModelError[] = [];
+  checkForbiddenChars(doc, charErrors);
+
   const validate = schemaValidator();
   const schemaOk = validate(doc) as boolean;
   if (!schemaOk) {
-    return { valid: false, errors: (validate.errors ?? []).map(fromAjvError) };
+    // Drop ajv `pattern` errors — they duplicate the friendlier `charErrors` — and
+    // surface the rest (missing fields, wrong types, unknown properties).
+    const shapeErrors = (validate.errors ?? []).filter((e) => e.keyword !== "pattern").map(fromAjvError);
+    return { valid: false, errors: [...charErrors, ...shapeErrors] };
   }
-  const errors: ModelError[] = [];
+  const errors: ModelError[] = [...charErrors];
   semanticChecks(doc as MigrationModel, errors);
   return { valid: errors.length === 0, errors };
 }
