@@ -1,0 +1,9 @@
+---
+"@tdk/core": minor
+---
+
+Add the `@tdk/core/migrate` subpath: the migration model, its JSON Schema, a validator, and the printer (ADR-0026, #13).
+
+- The MODEL is a versioned, plain-JSON contract a legacy-form parser produces and the printer consumes, crossing the confidentiality wall (ADR-0013) as data. `model.schema.json` is a real committed artifact — the public contract producers validate against — exported via `modelSchema()`. Node kinds: template meta; questions (with type, options, `visibleWhen`, `exampleValue`, a page tag, and pass-through field options); the restricted `visibleWhen` vocabulary (`{field,is}` / `{field,in}` / `{all}`); the logic IR (`fieldRef`, `literal`, `logicRef`, `lookupRef`, `concat`, `template`, `conditional`, `listMap`); lookups (opaque, preserved verbatim); effects (a legacy submit action, keyed by `actionRef`); value references (`ref` / `questionRef` / `logicRef` / `lookupRef` / `effectRef` / `literal` / inline op); and the verbatim escape hatch (`{kind:"expression", language, source}`).
+- `validateModel(doc)` — gate 0. AJV against the schema, plus the semantic checks the schema cannot express (referenced names exist, no duplicate names, `visibleWhen` fields are questions), reported as path-qualified messages with nearest-name typo suggestions.
+- `printTemplate(model, opts)` — emits the files of one template directory: an idiomatic authoring-v2 `template.ts` (module-scope field consts with `.showWhen`, a `derive` per logic node, effects through org-supplied pack helpers, pages-as-TOC, handle-based output), a born-testable `__fixtures__/scenarios.ts`, and a `migration-report.json`. Deterministic (byte-identical output, no timestamps). Fully usable with NO mapping — every effect prints as a flagged direct `effect(...)`, every lookup as a flagged placeholder. Nothing is silently dropped: every unmapped or inexpressible construct becomes a flagged `TODO(migration)` in the code and a report entry.

@@ -1,0 +1,290 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tdk.dev/schema/migration-model/v1.json",
+  "title": "TDK migration model",
+  "description": "The versioned contract a legacy-form parser produces and the TDK printer consumes (ADR-0026). Sibling of the TypeScript types in model.ts; schema-parity.test.ts pins the two together.",
+  "type": "object",
+  "required": ["modelVersion", "template", "questions"],
+  "additionalProperties": false,
+  "properties": {
+    "modelVersion": { "type": "string", "const": "1", "description": "The model dialect version." },
+    "template": { "$ref": "#/definitions/templateMeta" },
+    "questions": { "type": "array", "items": { "$ref": "#/definitions/question" } },
+    "logic": { "type": "array", "items": { "$ref": "#/definitions/logicNode" } },
+    "lookups": { "type": "array", "items": { "$ref": "#/definitions/lookup" } },
+    "effects": { "type": "array", "items": { "$ref": "#/definitions/effect" } },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/valueRef" }
+    }
+  },
+  "definitions": {
+    "scalarValue": { "type": ["string", "number", "boolean"] },
+    "jsonValue": {},
+    "templateMeta": {
+      "type": "object",
+      "required": ["id", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "type": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "owner": { "type": "string" }
+      }
+    },
+    "question": {
+      "type": "object",
+      "required": ["name", "type", "page"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["string", "choice", "boolean", "number", "array"] },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "options": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "required": { "type": "boolean" },
+        "default": { "$ref": "#/definitions/jsonValue" },
+        "exampleValue": { "$ref": "#/definitions/jsonValue" },
+        "page": { "type": "string", "minLength": 1 },
+        "visibleWhen": { "$ref": "#/definitions/visibleWhen" },
+        "format": { "type": "string" },
+        "pattern": { "type": "string" },
+        "minLength": { "type": "number" },
+        "maxLength": { "type": "number" },
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" },
+        "uiWidget": { "type": "string" },
+        "uiOptions": { "type": "object" },
+        "items": { "$ref": "#/definitions/jsonValue" }
+      }
+    },
+    "visibleWhen": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["field", "is"],
+          "additionalProperties": false,
+          "properties": {
+            "field": { "type": "string" },
+            "is": { "$ref": "#/definitions/scalarValue" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["field", "in"],
+          "additionalProperties": false,
+          "properties": {
+            "field": { "type": "string" },
+            "in": { "type": "array", "items": { "$ref": "#/definitions/scalarValue" } }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["all"],
+          "additionalProperties": false,
+          "properties": {
+            "all": { "type": "array", "items": { "$ref": "#/definitions/visibleWhen" } }
+          }
+        }
+      ]
+    },
+    "conditionalCase": {
+      "type": "object",
+      "required": ["when", "then"],
+      "additionalProperties": false,
+      "properties": {
+        "when": { "$ref": "#/definitions/visibleWhen" },
+        "then": { "$ref": "#/definitions/logicExpr" }
+      }
+    },
+    "logicOp": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["op", "field"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "const": "fieldRef" },
+            "field": { "type": "string" },
+            "name": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["op", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "const": "literal" },
+            "value": { "$ref": "#/definitions/jsonValue" },
+            "name": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["op", "ref"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "const": "logicRef" },
+            "ref": { "type": "string" },
+            "name": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["op", "ref"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "const": "lookupRef" },
+            "ref": { "type": "string" },
+            "name": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["op", "parts"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "const": "concat" },
+            "parts": { "type": "array", "items": { "$ref": "#/definitions/logicExpr" } },
+            "name": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["op", "template", "bindings"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "const": "template" },
+            "template": { "type": "string" },
+            "bindings": {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/definitions/logicExpr" }
+            },
+            "name": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["op", "cases", "else"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "const": "conditional" },
+            "cases": { "type": "array", "items": { "$ref": "#/definitions/conditionalCase" } },
+            "else": { "$ref": "#/definitions/logicExpr" },
+            "name": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["op", "source", "as", "body"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "const": "listMap" },
+            "source": { "$ref": "#/definitions/logicExpr" },
+            "as": { "type": "string" },
+            "body": { "$ref": "#/definitions/logicExpr" },
+            "name": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "logicExpr": { "$ref": "#/definitions/logicOp" },
+    "expressionEscape": {
+      "type": "object",
+      "required": ["name", "kind", "language", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "const": "expression" },
+        "language": { "enum": ["jsonata", "nunjucks", "scaffolder"] },
+        "source": { "type": "string" }
+      }
+    },
+    "logicNode": {
+      "oneOf": [
+        { "allOf": [{ "$ref": "#/definitions/logicOp" }, { "type": "object", "required": ["name"] }] },
+        { "$ref": "#/definitions/expressionEscape" }
+      ]
+    },
+    "valueRef": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["ref"],
+          "additionalProperties": false,
+          "properties": { "ref": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "required": ["questionRef"],
+          "additionalProperties": false,
+          "properties": { "questionRef": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "required": ["logicRef"],
+          "additionalProperties": false,
+          "properties": { "logicRef": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "required": ["lookupRef"],
+          "additionalProperties": false,
+          "properties": { "lookupRef": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "required": ["effectRef"],
+          "additionalProperties": false,
+          "properties": {
+            "effectRef": { "type": "string" },
+            "path": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["literal"],
+          "additionalProperties": false,
+          "properties": { "literal": { "$ref": "#/definitions/jsonValue" } }
+        },
+        { "$ref": "#/definitions/logicOp" }
+      ]
+    },
+    "lookup": {
+      "type": "object",
+      "required": ["name", "kind", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string" },
+        "source": { "type": "string" },
+        "params": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/valueRef" }
+        },
+        "at": { "type": "string" }
+      }
+    },
+    "effect": {
+      "type": "object",
+      "required": ["name", "kind", "actionRef"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string" },
+        "actionRef": { "type": "string" },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/valueRef" }
+        },
+        "when": { "$ref": "#/definitions/visibleWhen" },
+        "at": { "type": "string" }
+      }
+    }
+  }
+}
