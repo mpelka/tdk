@@ -23,6 +23,9 @@
 //                         outcome; exits non-zero if any run isn't ok (--json report)
 //   tdk test [path]       run scenario SNAPSHOT tests (jest/vitest model).
 //                         --list only lists templates + scenarios (never runs).
+//   tdk migrate <m.json>  turn migration model(s) into template dir(s): validate,
+//                         print v2 source + scenarios + report, smoke-compile.
+//                         --validate-only stops at gate 0; --json for a report.
 //   tdk init [dir]        scaffold a testable template + config + first snapshot
 //   tdk --version         print the CLI version
 //
@@ -55,6 +58,7 @@ import {
 } from "./lib/execute.ts";
 import { runInit } from "./lib/init.ts";
 import type { StdinRemap } from "./lib/load.ts";
+import { formatMigrateReport, type MigrateOptions, runMigrate, serializeMigrateReport } from "./lib/migrate.ts";
 import {
   anyFailure,
   emptyMessage,
@@ -338,6 +342,40 @@ function buildProgram(version: string): Command {
         // itself a `failed`) or a template failed to load/compile. Writes are not
         // failures.
         if (anyFailure(reports)) process.exitCode = 1;
+      },
+    );
+
+  // tdk migrate <model.json...>
+  program
+    .command("migrate")
+    .description("Turn migration model(s) into template dir(s): validate, print v2 source, and smoke-compile.")
+    .argument("<models...>", "one or more migration model .json files (the ADR-0026 contract)")
+    .option("--out <dir>", "directory to write <template-id>/ dirs into (default .)", pathValue, ".")
+    .option("--mapping <file>", "an org action/lookup mapping (.json, or a .ts/.js default export)", pathValue)
+    .option("--validate-only", "run gate 0 (schema + semantic) alone; write nothing")
+    .option("--force", "overwrite an existing output directory (generate-once is the default)")
+    .option("--json", "emit a machine-readable report")
+    .action(
+      async (
+        models: string[],
+        opts: { out: string; mapping?: string; validateOnly?: boolean; force?: boolean; json?: boolean },
+      ) => {
+        const migrateOpts: MigrateOptions = {
+          out: opts.out,
+          mapping: opts.mapping,
+          validateOnly: Boolean(opts.validateOnly),
+          force: Boolean(opts.force),
+        };
+        const result = await runMigrate(models, migrateOpts);
+        if (opts.json) {
+          process.stdout.write(serializeMigrateReport(result));
+        } else {
+          // Invalid-model diagnostics belong on stderr; the summary on stdout.
+          const stream = result.ok ? process.stdout : process.stderr;
+          stream.write(formatMigrateReport(result, migrateOpts.validateOnly));
+        }
+        // Non-zero if any model was invalid or any emission failed.
+        if (!result.ok) process.exitCode = 1;
       },
     );
 

@@ -328,6 +328,33 @@ Exit codes:
 See [Test templates](/guide/testing) for the scenario-fixture and snapshot model this
 command drives.
 
+## `tdk migrate <models...>`
+
+Turn one or more migration models into template directories (ADR-0026). See the
+[migration guide](/guide/migrating) for the model contract and the four-gate loop.
+
+```
+Arguments:
+  models             one or more migration model .json files
+
+Options:
+  --out <dir>        directory to write <template-id>/ dirs into (default .)
+  --mapping <file>   an org action/lookup mapping (.json, or a .ts/.js default export)
+  --validate-only    run gate 0 (schema + semantic) alone; write nothing
+  --force            overwrite an existing output directory (generate-once is the default)
+  --json             emit a machine-readable report
+  -h, --help         display help for command
+```
+
+Each model is validated against the published schema and its semantic rules (gate 0).
+With `--validate-only`, that is all it does — a path-qualified error to stderr and a
+non-zero exit on any invalid model, or `--json` for a machine-readable report. A full
+run then prints each template into `<out>/<template-id>/` (`template.ts`, its
+`__fixtures__/scenarios.ts`, and `migration-report.json`), refuses to overwrite an
+existing directory unless `--force`, and runs the emitted template through compile and
+validate as a smoke. The command exits non-zero if any model is invalid or any
+emission fails.
+
 ## `tdk init [dir]`
 
 Scaffold a testable template, config and first snapshot into `[dir]` (default `.`).

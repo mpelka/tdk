@@ -1,0 +1,37 @@
+{
+  "template": "request-oven-maintenance",
+  "modelVersion": "1",
+  "counts": {
+    "translated": 14,
+    "flagged": 3
+  },
+  "flagged": [
+    {
+      "construct": "expression",
+      "name": "priority-code",
+      "reason": "verbatim jsonata expression the logic IR cannot express",
+      "path": "logic[4]",
+      "verbatim": "$count(partNumbers) > 3 ? \"bulk\" : \"standard\"",
+      "emittedAs": "a flagged raw placeholder; re-author as a derive"
+    },
+    {
+      "construct": "lookup",
+      "name": "assignee",
+      "reason": "external reference, no interpretable semantics",
+      "path": "lookups[0]",
+      "at": "oven-maintenance.export.json#/fields/assignee",
+      "verbatim": "roster://maintenance-team?site={bakeryCode}",
+      "emittedAs": "maintenanceRoster({ site }) with a TODO"
+    },
+    {
+      "construct": "effect",
+      "name": "notify-facilities",
+      "reason": "unmapped legacy action — no action mapping supplied",
+      "path": "effects[1]",
+      "at": "oven-maintenance.export.json#/actions/notify",
+      "verbatim": "legacy:oven-booking:notify",
+      "emittedAs": "effect(\"notify-facilities\", \"legacy:oven-booking:notify\", { input })"
+    }
+  ],
+  "notes": []
+}

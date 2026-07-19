@@ -1,0 +1,63 @@
+example — happy path:
+  steps:
+    job-summary:
+      input:
+        data:
+          ovenId: OV-4471
+          bakeryCode: BK1
+        expression: ("Oven " & (ovenId) & " at " & (bakeryCode))
+      output:
+        result: Oven OV-4471 at BK1
+    sla-hours:
+      input:
+        data:
+          severity: urgent
+        expression: |-
+          ((severity = "urgent")
+            ? 4
+            : ((severity = "normal") ? 24 : 72))
+      output:
+        result: 4
+    parts-list:
+      input:
+        data:
+          partNumbers:
+            - A1
+            - B2
+        expression: '[partNumbers.(("OV-" & ($)))]'
+      output:
+        result:
+          - OV-A1
+          - OV-B2
+    escalation-note:
+      input:
+        data:
+          jobSummary: Oven OV-4471 at BK1
+          severity: urgent
+        expression: '("Re: " & (jobSummary) & " (severity " & (severity) & ")")'
+      output:
+        result: "Re: Oven OV-4471 at BK1 (severity urgent)"
+    submit-request:
+      input:
+        title: Oven OV-4471 at BK1
+        site: BK1
+        oven: OV-4471
+        sla: 4
+        parts:
+          - OV-A1
+          - OV-B2
+        note: "Re: Oven OV-4471 at BK1 (severity urgent)"
+        priority: "TODO(migration) unported expression: priority-code"
+        detail: Door seal warped, heat escaping
+        assignee: maintenance-roster
+      output:
+        body:
+          id: submit-request-id
+    notify-facilities:
+      input:
+        summary: Oven OV-4471 at BK1
+        reason: Production line stopped
+      output: {}
+  output:
+    workOrderId: submit-request-id
+    sla: 4

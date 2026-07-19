@@ -25,6 +25,7 @@ export default defineConfig({
           { text: "Write expressions", link: "/guide/expressions" },
           { text: "Test templates", link: "/guide/testing" },
           { text: "Port a YAML template", link: "/guide/porting" },
+          { text: "Migrate a fleet", link: "/guide/migrating" },
           { text: "Cookbook", link: "/guide/cookbook" },
           { text: "Extend TDK", link: "/guide/extending" },
           { text: "The VS Code extension", link: "/guide/vscode" },
