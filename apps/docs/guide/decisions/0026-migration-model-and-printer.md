@@ -366,3 +366,16 @@ the honest-fallback invariant in miniature:
   arrives with its regression baseline already written.
 - The model schema is versioned independently of the TDK packages, because it is a public
   contract the private parser depends on.
+
+## Amendments
+
+- 2026-07-20 — the template meta node gained an optional `extraSpec`: a free-form JSON
+  object of custom top-level `spec` keys the DSL does not model, emitted verbatim as
+  `defineTemplate`'s `extraSpec` and merged into the compiled entity's `spec`. A real
+  migration from a legacy catalog system carried service-catalog metadata on every form
+  (a category, a cost centre, an on-call routing block) that had no first-class field, so
+  the model dropped it. `extraSpec` is the escape hatch that preserves it. It is
+  deliberately exempt from the strict name/id character rules (it is free-form by design)
+  but stays emission-safe: the printer renders it through the faithful `lit()` encoding
+  the other safe positions use, so hostile characters round-trip into the compiled spec
+  rather than injecting code. A model-only, additive change (`modelVersion` stays `"1"`).

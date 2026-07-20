@@ -13,6 +13,7 @@ export type {
   Effect,
   ExpressionEscape,
   ImportSpec,
+  JsonObject,
   JsonValue,
   LogicExpr,
   LogicNode,

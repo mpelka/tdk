@@ -18,6 +18,9 @@ export type ScalarValue = string | number | boolean;
 /** Any JSON value (a default, an example, a literal). */
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
+/** A JSON object — a map of string keys to JSON values (the shape of `extraSpec`). */
+export type JsonObject = { [key: string]: JsonValue };
+
 /** The template META node — id, title, and the catalog descriptors. */
 export interface TemplateMeta {
   /** The template id (`metadata.name` in the compiled entity). */
@@ -32,6 +35,15 @@ export interface TemplateMeta {
   tags?: string[];
   /** The owning group/user. */
   owner?: string;
+  /**
+   * Custom top-level `spec` keys the DSL does not model — a free-form JSON object
+   * emitted verbatim as `defineTemplate`'s `extraSpec` and merged into the compiled
+   * entity's `spec`. The deliberate escape hatch for catalog metadata a legacy source
+   * carried but TDK has no first-class field for. Unvalidated beyond "is an object"
+   * (the printer emits its keys/values through the same faithful `lit()` encoding the
+   * other safe positions use, so hostile characters round-trip rather than inject).
+   */
+  extraSpec?: JsonObject;
 }
 
 /** The question TYPES the model understands — one per `p.*` field builder. */

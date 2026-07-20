@@ -17,7 +17,17 @@ const typedValid: MigrationModel[] = [
   { modelVersion: "1", template: { id: "a", title: "A" }, questions: [{ name: "x", type: "string", page: "P" }] },
   {
     modelVersion: "1",
-    template: { id: "b", title: "B", type: "service", tags: ["t"], owner: "o", description: "d" },
+    template: {
+      id: "b",
+      title: "B",
+      type: "service",
+      tags: ["t"],
+      owner: "o",
+      description: "d",
+      // The escape hatch: free-form (a hyphenated key, nested arrays/objects) — accepted
+      // by both the TS type (JsonObject) and the `{ "type": "object" }` schema.
+      extraSpec: { "catalog-metadata": { category: "Catering", tiers: [1, 2], meta: { a: true } } },
+    },
     questions: [
       {
         name: "c",

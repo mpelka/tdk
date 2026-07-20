@@ -338,6 +338,16 @@ function semanticChecks(model: MigrationModel, errors: ModelError[]): void {
 // still PARSES. The schema patterns reject these; this pass gives the producer the
 // friendly, precise message that names the field and says what to strip. (Defense in
 // depth also lives in the printer, which sanitizes every interpolation.)
+//
+// The scan covers exactly the fields that land in an UNSAFE position (an identifier, a
+// step id, a `//` comment, a `raw` placeholder). It deliberately does NOT descend into
+// the fields the printer emits through `lit()` — `default`, `exampleValue`, `options`,
+// `uiOptions`, `items`, and `template.extraSpec` — because `lit()` renders every leaf
+// with `JSON.stringify`, which faithfully escapes any character inside a double-quoted
+// string. A newline or backtick there round-trips into the compiled spec, it cannot
+// break out. So `extraSpec` is exempt from the strict name/id rules (it is the escape
+// hatch, free-form by design) yet still emission-safe; `injection.test.ts` pins that a
+// hostile extraSpec value both parses and round-trips.
 // ---------------------------------------------------------------------------
 
 /** A control character, DEL, or a JS line/paragraph separator. */

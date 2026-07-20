@@ -17,6 +17,18 @@ export const corpus: MigrationModel = {
     type: "service",
     tags: ["bakery", "oven", "maintenance"],
     owner: "team-bakery",
+    // Custom top-level spec the DSL does not model — service-catalog metadata the
+    // legacy oven-booking system carried on every form. The escape hatch preserves it
+    // verbatim so a migrated template keeps its catalog wiring.
+    extraSpec: {
+      catalog_metadata: {
+        category: "Facilities",
+        lead_time_days: "3",
+        fulfilment_team: "Bakery Facilities Guild",
+        cost_centre: "OVEN-OPS",
+        escalation: { channel: "#oven-support", pager: "facilities-oncall" },
+      },
+    },
   },
   questions: [
     // Page 1 — Site. A choice with a value→label map, a plain string, a number.
