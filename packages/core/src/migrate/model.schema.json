@@ -46,7 +46,11 @@
         "description": { "type": "string" },
         "type": { "type": "string" },
         "tags": { "type": "array", "items": { "type": "string" } },
-        "owner": { "type": "string" }
+        "owner": { "type": "string" },
+        "extraSpec": {
+          "type": "object",
+          "description": "Custom top-level spec keys the DSL does not model, emitted verbatim as defineTemplate's extraSpec. A deliberate escape hatch: free-form (additionalProperties allowed), NOT subject to the strict name/id patterns. Its string values are still emission-safe — the printer encodes them through the same faithful lit() path the other safe positions use, so hostile characters round-trip rather than inject."
+        }
       }
     },
     "question": {

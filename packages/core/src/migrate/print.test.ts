@@ -46,6 +46,15 @@ describe("printTemplate — the round-trip proof (gates 1 + 2)", () => {
     expect(result.valid).toBe(true);
   });
 
+  test("the model's extraSpec rides through into the compiled spec block verbatim", async () => {
+    const { object } = await compileResolved(goldenTemplate, { env: "test", outDir: "" });
+    // The corpus' custom top-level spec metadata is merged into `spec` unchanged — the
+    // migration keeps catalog wiring the DSL has no first-class field for.
+    expect((object.spec as Record<string, unknown>).catalog_metadata).toEqual(
+      corpus.template.extraSpec?.catalog_metadata,
+    );
+  });
+
   test("the generated scenario executes and produces the expected output (gate 2)", async () => {
     // The generated fixture is loosely typed (`satisfies ExecuteFixture`); execute
     // infers the template's strict param unions, so cast at the boundary.

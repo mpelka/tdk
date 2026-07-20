@@ -126,6 +126,41 @@ array of `questions`, and optional `logic`, `lookups`, `effects`, and `outputs`.
 The `template` block carries the id, title, description, type, tags, and owner. Only
 `id` and `title` are required; `type` defaults to `service`.
 
+It also carries an optional `extraSpec` — the escape hatch for custom top-level `spec`
+keys the DSL does not model. A legacy source often stamps service-catalog metadata on
+every form (a category, a cost centre, an on-call routing block) that TDK has no
+first-class field for. Put it in `extraSpec` and the printer emits it verbatim as
+`defineTemplate`'s `extraSpec`, which merges into the compiled entity's `spec`
+unchanged, so a migrated template keeps that wiring instead of losing it.
+
+`extraSpec` is a free-form JSON object: it is deliberately not held to the strict
+name/id rules the rest of the model is, so any keys and nested shapes are allowed.
+Its string values are still emission-safe — the printer renders them through the same
+faithful encoding the other safe positions use, so a backtick, a `${`, or a newline in
+a value round-trips into the compiled spec rather than breaking the generated file. But
+that is the only guarantee: the model does not otherwise interpret or validate what you
+put here.
+
+```json
+{
+  "modelVersion": "1",
+  "template": {
+    "id": "request-oven-maintenance",
+    "title": "Request oven maintenance",
+    "type": "service",
+    "extraSpec": {
+      "catalog_metadata": {
+        "category": "Facilities",
+        "lead_time_days": "3",
+        "fulfilment_team": "Bakery Facilities Guild",
+        "escalation": { "channel": "#oven-support", "pager": "facilities-oncall" }
+      }
+    }
+  },
+  "questions": [{ "name": "ovenId", "type": "string", "title": "Oven asset ID", "page": "Site" }]
+}
+```
+
 ### Questions
 
 A question is one form field. It has a `name`, a `type`, and a `page` tag. The printer

@@ -626,6 +626,11 @@ class Printer {
     metaLines.push(`  type: ${lit(meta.type ?? "service")},`);
     if (meta.tags !== undefined) metaLines.push(`  tags: ${lit(meta.tags)},`);
     if (meta.owner !== undefined) metaLines.push(`  owner: ${lit(meta.owner)},`);
+    // The escape hatch: custom top-level spec keys, emitted verbatim. `lit()` faithfully
+    // encodes every key and value (JSON.stringify at each leaf), so a backtick, `${`, a
+    // newline, or a quote in a value lands as an escaped literal in a double-quoted string
+    // — it round-trips into the compiled spec, it cannot break out and inject code.
+    if (meta.extraSpec !== undefined) metaLines.push(`  extraSpec: ${lit(meta.extraSpec)},`);
 
     const pages = this.pageGroups()
       .map((g) => `    page(${lit(g.title)}, { ${g.consts.join(", ")} }),`)

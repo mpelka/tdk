@@ -64,6 +64,7 @@ export default defineTemplate({
   type: "service",
   tags: ["bakery", "oven", "maintenance"],
   owner: "team-bakery",
+  extraSpec: { catalog_metadata: { category: "Facilities", lead_time_days: "3", fulfilment_team: "Bakery Facilities Guild", cost_centre: "OVEN-OPS", escalation: { channel: "#oven-support", pager: "facilities-oncall" } } },
   // Pages ARE the ordered table of contents; ui:order is inferred per page.
   pages: [
     page("Site", { bakeryCode, ovenId, ovenCount }),

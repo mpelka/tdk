@@ -1,7 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { compileResolved } from "../index.ts";
 import type { MigrationModel } from "./model.ts";
 import { printTemplate } from "./print.ts";
 import { formatModelErrors, validateModel } from "./validate.ts";
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 // The emitted-code injection guard (ADR-0026 / the adversarial review of PR #35).
 //
@@ -152,5 +158,76 @@ describe("emission sanitizes benign multi-line + defends in depth", () => {
     m.effects = [{ name: "e", kind: "k", actionRef: "legacy:x", inputs: { v: { logicRef: "esc" } } }];
     const ts = printTemplate(m).files["template.ts"];
     expect(ts).toContain("//   source: a b"); // the control char replaced by a space
+  });
+});
+
+// The extraSpec escape hatch is the ONE model position that is free-form (not subject to
+// the strict name/id char patterns) yet still emitted. Its keys and values land in a TS
+// OBJECT LITERAL rendered by `lit()` — every leaf goes through JSON.stringify, which
+// escapes any character inside a double-quoted string. So a backtick, `${`, a newline, or
+// a quote in an extraSpec value cannot break out; it round-trips faithfully into the
+// compiled spec. This suite proves both halves: validation ACCEPTS the hostile values,
+// and the emitted file PARSES and carries them into `spec` byte-for-byte.
+describe("extraSpec — the emission-safe escape hatch", () => {
+  // A scratch dir INSIDE the package so the emitted template can resolve @tdk/core when
+  // we import it back (Bun walks up to the workspace node_modules).
+  let pkgTmp: string;
+  beforeAll(async () => {
+    pkgTmp = await mkdtemp(join(here, "..", ".tmp-extraspec-"));
+  });
+  afterAll(async () => {
+    await rm(pkgTmp, { recursive: true, force: true });
+  });
+
+  // Every classic breakout character, all inside string VALUES (and object KEYS), nested.
+  const hostileExtraSpec = {
+    "catalog-metadata": {
+      backtick: "risk`whoami`end",
+      interp: "x${process.env.SECRET}z",
+      newline: "line one\nline two",
+      crlf: "a\r\nb",
+      quote: 'say "hi" now',
+      allAtOnce: '`${\n}`"',
+      nested: { deep: ["a`b", "c${d}e", "f\ng", 'q"r'] },
+    },
+  };
+
+  function hostileModel(id: string): MigrationModel {
+    return {
+      modelVersion: "1",
+      template: { id, title: "Hostile extraSpec", type: "service", extraSpec: hostileExtraSpec },
+      questions: [{ name: "x", type: "string", page: "P" }],
+    };
+  }
+
+  test("validation ACCEPTS hostile extraSpec values (exempt from the strict char rules)", () => {
+    const r = validateModel(hostileModel("es-valid"));
+    if (!r.valid) throw new Error(formatModelErrors(r.errors));
+    expect(r.valid).toBe(true);
+  });
+
+  test("a non-object extraSpec is rejected by the schema", () => {
+    const bad = hostileModel("es-bad") as unknown as { template: { extraSpec: unknown } };
+    bad.template.extraSpec = "not an object";
+    expect(validateModel(bad).valid).toBe(false);
+  });
+
+  test("the emitted file PARSES and the hostile values round-trip into the compiled spec", async () => {
+    const model = hostileModel("es-roundtrip");
+    expect(validateModel(model).valid).toBe(true);
+
+    const ts = printTemplate(model).files["template.ts"];
+    // Sanity: the values are emitted via lit() (double-quoted, JSON-escaped) — no bare
+    // backtick or `${` at statement position could break out.
+    expect(ts).toContain("extraSpec: {");
+
+    // Import the emitted source back (this is the parse proof — a breakout would throw),
+    // then compile it and confirm spec.catalog-metadata is the ORIGINAL object verbatim.
+    const file = join(pkgTmp, "es-roundtrip.ts");
+    await writeFile(file, ts, "utf8");
+    const mod = (await import(`${file}?t=${Date.now()}`)) as { default: unknown };
+    const { object } = await compileResolved(mod.default as never, { env: "test", outDir: "" });
+    const spec = object.spec as Record<string, unknown>;
+    expect(spec["catalog-metadata"]).toEqual(hostileExtraSpec["catalog-metadata"]);
   });
 });
