@@ -59,7 +59,7 @@
       "additionalProperties": false,
       "properties": {
         "name": { "$ref": "#/definitions/identifierName" },
-        "type": { "enum": ["string", "choice", "boolean", "number", "array"] },
+        "type": { "enum": ["string", "choice", "boolean", "number", "array", "customField"] },
         "title": { "type": "string" },
         "description": { "type": "string" },
         "options": {
@@ -77,8 +77,10 @@
         "maxLength": { "type": "number" },
         "minimum": { "type": "number" },
         "maximum": { "type": "number" },
+        "uiField": { "type": "string" },
         "uiWidget": { "type": "string" },
         "uiOptions": { "type": "object" },
+        "customType": { "type": "string" },
         "items": { "$ref": "#/definitions/jsonValue" }
       }
     },

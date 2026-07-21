@@ -142,3 +142,58 @@ describe("validateModel — semantic checks + typo suggestions", () => {
     expect(validateModel(m).valid).toBe(true);
   });
 });
+
+describe("validateModel — customField question shape", () => {
+  test("a valid customField (uiField + customType + object exampleValue) passes", () => {
+    const m = baseModel();
+    m.questions.push({
+      name: "cakeLine",
+      type: "customField",
+      title: "Cake line",
+      uiField: "CakePickerWithDefault",
+      customType: "object",
+      uiOptions: { path: "bakery-catalog/entities" },
+      exampleValue: { id: "cl-1", name: "Sponge" },
+      page: "P",
+    });
+    const result = validateModel(m);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  test("a customField without uiField is flagged", () => {
+    const m = baseModel();
+    m.questions.push({ name: "cakeLine", type: "customField", customType: "object", page: "P" });
+    const result = validateModel(m);
+    expect(result.valid).toBe(false);
+    expect(formatModelErrors(result.errors)).toBe(
+      'questions[2].uiField: a "customField" question requires "uiField" (the Backstage custom field extension name emitted as ui:field)',
+    );
+  });
+
+  test("customType on a non-customField question is flagged", () => {
+    const m = baseModel();
+    m.questions.push({ name: "note2", type: "string", customType: "object", page: "P" });
+    const result = validateModel(m);
+    expect(result.valid).toBe(false);
+    expect(formatModelErrors(result.errors)).toContain(
+      'questions[2].customType: "customType" is only meaningful on a "customField" question (this one is "string")',
+    );
+  });
+
+  test("options on a customField question is flagged (the printer would drop it)", () => {
+    const m = baseModel();
+    m.questions.push({
+      name: "cakeLine",
+      type: "customField",
+      uiField: "CakePickerWithDefault",
+      options: { a: "A" },
+      page: "P",
+    });
+    const result = validateModel(m);
+    expect(result.valid).toBe(false);
+    expect(formatModelErrors(result.errors)).toContain(
+      'questions[2].options: "options" is only valid on a "choice" question (this one is "customField")',
+    );
+  });
+});

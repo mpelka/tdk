@@ -375,8 +375,13 @@ class Printer {
     if (q.maxLength !== undefined) parts.push(`maxLength: ${q.maxLength}`);
     if (q.minimum !== undefined) parts.push(`minimum: ${q.minimum}`);
     if (q.maximum !== undefined) parts.push(`maximum: ${q.maximum}`);
+    if (q.uiField !== undefined) parts.push(`uiField: ${lit(q.uiField)}`);
     if (q.uiWidget !== undefined) parts.push(`uiWidget: ${lit(q.uiWidget)}`);
     if (q.uiOptions !== undefined) parts.push(`uiOptions: ${lit(q.uiOptions)}`);
+    // A customField's value type maps to `p.customField`'s `type`. Emit it only when
+    // the model sets it — core defaults an absent `type` to "string", so a default
+    // would be noise (and would change byte-stable output for no reason).
+    if (q.type === "customField" && q.customType !== undefined) parts.push(`type: ${lit(q.customType)}`);
     if (q.items !== undefined) parts.push(`items: ${lit(q.items)}`);
     return `{ ${parts.join(", ")} }`;
   }
@@ -396,6 +401,12 @@ class Printer {
             .map(([k, v]) => `${objKey(k)}: ${lit(v)}`)
             .join(", ")} }`;
       builder = `p.choice(${optionsSrc}, ${opts})`;
+    } else if (q.type === "customField") {
+      // An EXPLICIT branch — `customField` is the one type whose builder name is not a
+      // bare `p.<type>`, so it must not ride the generic fallthrough (which would emit
+      // `p.customField` here only by name-coincidence). `p.customField` carries the
+      // ConditionalParam overload, so a `.showWhen(...)` chain below still types.
+      builder = `p.customField(${opts})`;
     } else {
       builder = `p.${q.type}(${opts})`;
     }

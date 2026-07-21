@@ -47,7 +47,7 @@ export interface TemplateMeta {
 }
 
 /** The question TYPES the model understands — one per `p.*` field builder. */
-export type QuestionType = "string" | "choice" | "boolean" | "number" | "array";
+export type QuestionType = "string" | "choice" | "boolean" | "number" | "array" | "customField";
 
 /**
  * A QUESTION — one form field. `name` is the source name (the const is derived from
@@ -89,10 +89,24 @@ export interface Question {
   minimum?: number;
   /** A number `maximum`. */
   maximum?: number;
+  /**
+   * A `ui:field` — the Backstage custom field extension name (emitted as RJSF
+   * `ui:field`, e.g. `CakePickerWithDefault`). Legal on ANY question type, mirroring
+   * core, where `uiField` is a `BaseParamOptions` member every param accepts; a
+   * `customField` question REQUIRES it.
+   */
+  uiField?: string;
   /** A `ui:widget`. */
   uiWidget?: string;
   /** A `ui:options` map. */
   uiOptions?: Record<string, JsonValue>;
+  /**
+   * For a `customField`: the JSON-Schema `type` of the custom field's value (e.g.
+   * `object`), mapped to `p.customField`'s `type`. Only meaningful on a `customField`
+   * question; core defaults it to `string` when omitted, so the printer emits it only
+   * when set.
+   */
+  customType?: string;
   /** For an `array`: the items schema. */
   items?: JsonValue;
 }

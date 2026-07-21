@@ -93,12 +93,25 @@ export const corpus: MigrationModel = {
         ],
       },
     },
-    // Page 3 — Parts. An array feeds the listMap logic node.
+    // Page 3 — Parts. An array feeds the listMap logic node, and a customField rides a
+    // Backstage field extension (ui:field) the DSL has no first-class builder for — an
+    // object-valued picker that reaches core's p.customField, with an object exampleValue.
     {
       name: "partNumbers",
       type: "array",
       title: "Replacement part numbers",
       exampleValue: ["A1", "B2"],
+      page: "Parts",
+    },
+    {
+      name: "cakeLine",
+      type: "customField",
+      title: "Affected cake line",
+      description: "The bakery-catalog cake line this oven produces.",
+      uiField: "CakePickerWithDefault",
+      customType: "object",
+      uiOptions: { path: "bakery-catalog/entities?filter=kind=CakeLine", valueSelector: "metadata.name" },
+      exampleValue: { id: "cake-line-sourdough", name: "Sourdough loaf" },
       page: "Parts",
     },
   ],

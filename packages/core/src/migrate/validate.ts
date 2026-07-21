@@ -297,12 +297,40 @@ function checkValueRef(vref: ValueRef, path: string, names: NameSets, errors: Mo
   }
 }
 
+/**
+ * Check a question's TYPE-shape wiring — the pairings the schema cannot express:
+ * a `customField` needs its `uiField`; `customType` belongs only to a `customField`;
+ * and `options` belongs only to a `choice`. Each mismatch would otherwise be silently
+ * dropped by the printer, so it is an error, in the path-quality style.
+ */
+function checkQuestionShape(q: Question, path: string, errors: ModelError[]): void {
+  if (q.type === "customField" && q.uiField === undefined) {
+    errors.push({
+      path: `${path}.uiField`,
+      message: `a "customField" question requires "uiField" (the Backstage custom field extension name emitted as ui:field)`,
+    });
+  }
+  if (q.customType !== undefined && q.type !== "customField") {
+    errors.push({
+      path: `${path}.customType`,
+      message: `"customType" is only meaningful on a "customField" question (this one is "${q.type}") — it would be silently dropped`,
+    });
+  }
+  if (q.options !== undefined && q.type !== "choice") {
+    errors.push({
+      path: `${path}.options`,
+      message: `"options" is only valid on a "choice" question (this one is "${q.type}") — it would be silently dropped`,
+    });
+  }
+}
+
 function semanticChecks(model: MigrationModel, errors: ModelError[]): void {
   const names = collectNames(model);
 
   checkDuplicates(model, errors);
 
   (model.questions ?? []).forEach((q: Question, i) => {
+    checkQuestionShape(q, `questions[${i}]`, errors);
     if (q.visibleWhen) checkVisibleWhen(q.visibleWhen, `questions[${i}].visibleWhen`, names, errors);
   });
 
@@ -342,12 +370,13 @@ function semanticChecks(model: MigrationModel, errors: ModelError[]): void {
 // The scan covers exactly the fields that land in an UNSAFE position (an identifier, a
 // step id, a `//` comment, a `raw` placeholder). It deliberately does NOT descend into
 // the fields the printer emits through `lit()` — `default`, `exampleValue`, `options`,
-// `uiOptions`, `items`, and `template.extraSpec` — because `lit()` renders every leaf
-// with `JSON.stringify`, which faithfully escapes any character inside a double-quoted
-// string. A newline or backtick there round-trips into the compiled spec, it cannot
-// break out. So `extraSpec` is exempt from the strict name/id rules (it is the escape
-// hatch, free-form by design) yet still emission-safe; `injection.test.ts` pins that a
-// hostile extraSpec value both parses and round-trips.
+// `uiField`, `uiWidget`, `uiOptions`, `customType`, `items`, and `template.extraSpec` —
+// because `lit()` renders every leaf with `JSON.stringify`, which faithfully escapes any
+// character inside a double-quoted string. A newline or backtick there round-trips into
+// the compiled spec, it cannot break out. So `extraSpec` (and the custom-field `uiField`
+// / `customType`, treated exactly like `uiWidget`/`uiOptions`) is exempt from the strict
+// name/id rules — free-form by design — yet still emission-safe; `injection.test.ts`
+// pins that hostile values in these positions both parse and round-trip.
 // ---------------------------------------------------------------------------
 
 /** A control character, DEL, or a JS line/paragraph separator. */

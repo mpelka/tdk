@@ -167,10 +167,11 @@ A question is one form field. It has a `name`, a `type`, and a `page` tag. The p
 groups the page tags into the pages table of contents in first-appearance order. The
 `exampleValue` feeds fixture generation, so a migrated template is born testable.
 
-The `type` is one of `string`, `choice`, `boolean`, `number`, or `array`. A `choice`
-carries an `options` map of value to label. Pass-through options — `format`,
-`pattern`, `minLength`, `maxLength`, `minimum`, `maximum`, `uiWidget`, `uiOptions`,
-`items`, `default`, `required` — are emitted verbatim onto the field builder.
+The `type` is one of `string`, `choice`, `boolean`, `number`, `array`, or `customField`
+(a Backstage field extension — see Custom fields below). A `choice` carries an `options`
+map of value to label. Pass-through options — `format`, `pattern`, `minLength`,
+`maxLength`, `minimum`, `maximum`, `uiField`, `uiWidget`, `uiOptions`, `items`, `default`,
+`required` — are emitted verbatim onto the field builder.
 
 ```json
 {
@@ -182,6 +183,43 @@ carries an `options` map of value to label. Pass-through options — `format`,
     { "name": "count", "type": "number", "minimum": 1, "page": "P" },
     { "name": "rush", "type": "boolean", "page": "P" },
     { "name": "parts", "type": "array", "items": { "type": "string" }, "page": "P" }
+  ]
+}
+```
+
+### Custom fields
+
+Backstage lets a template use a custom field extension — a React component registered
+under an RJSF `ui:field` name, such as `CakePickerWithDefault`. When a legacy form drives
+one, set the question `type` to `customField` and name the extension in `uiField`. The
+printer emits core's `p.customField`, which passes `uiField` (and any `uiOptions`) through
+verbatim as `ui:field` / `ui:options`.
+
+A `customField` question requires `uiField`. Its value is often not a plain string, so
+`customType` sets the JSON-Schema `type` of that value (for example `object`); omit it and
+core defaults the value to a string. `uiField` is legal on any question type — it mirrors
+core, where every field accepts a `uiField` — but `customType` belongs only to a
+`customField`, and `options` (a `choice`-only construct) on a `customField` is rejected
+rather than silently dropped. Both `uiField` and `customType` ride the same emission-safe
+path as `uiOptions`, so their contents round-trip faithfully into the compiled template.
+
+```json
+{
+  "modelVersion": "1",
+  "template": { "id": "cake-order", "title": "Cake order", "type": "service" },
+  "questions": [
+    { "name": "orderType", "type": "choice", "options": { "wedding": "Wedding", "birthday": "Birthday" }, "required": true, "page": "Order" },
+    {
+      "name": "cakeChoice",
+      "type": "customField",
+      "title": "Cake",
+      "uiField": "CakePickerWithDefault",
+      "customType": "object",
+      "uiOptions": { "path": "bakery-catalog/entities?filter=kind=CakeLine", "valueSelector": "metadata.name" },
+      "exampleValue": { "id": "cake-line-sponge", "name": "Sponge" },
+      "page": "Order",
+      "visibleWhen": { "field": "orderType", "is": "wedding" }
+    }
   ]
 }
 ```

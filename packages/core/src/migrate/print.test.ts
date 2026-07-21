@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { compileResolved, execute, validate } from "../index.ts";
@@ -8,7 +9,7 @@ import { scenarios as goldenScenarios } from "./__fixtures__/golden/__fixtures__
 import goldenTemplate from "./__fixtures__/golden/template.ts";
 import type { MigrationMapping, MigrationModel } from "./model.ts";
 import { printTemplate } from "./print.ts";
-import { validateModel } from "./validate.ts";
+import { formatModelErrors, validateModel } from "./validate.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const goldenDir = join(here, "__fixtures__", "golden");
@@ -30,7 +31,7 @@ describe("printTemplate — determinism + golden", () => {
 
   test("the report counts translated vs flagged, and quotes every flagged construct", () => {
     const { report } = printTemplate(corpus, { mapping: corpusMapping });
-    expect(report.counts).toEqual({ translated: 14, flagged: 3 });
+    expect(report.counts).toEqual({ translated: 15, flagged: 3 });
     expect(report.flagged.map((f) => f.construct).sort()).toEqual(["effect", "expression", "lookup"]);
     for (const f of report.flagged) {
       expect(f.path).toMatch(/^(logic|lookups|effects)\[\d+\]$/);
@@ -232,5 +233,81 @@ describe("printTemplate — no mapping (usable on day one)", () => {
     const ts = out.files["template.ts"];
     expect(ts).toContain("submit.output");
     expect(out.report.notes.some((n) => /default output/.test(n))).toBe(true);
+  });
+});
+
+describe("printTemplate — a customField reaches p.customField", () => {
+  // A scratch dir INSIDE the package so the emitted template can resolve @tdk/core when
+  // imported back (Bun walks up to the workspace node_modules) — same as the extraSpec
+  // round-trip in injection.test.ts.
+  let pkgTmp: string;
+  beforeAll(async () => {
+    pkgTmp = await mkdtemp(join(here, "..", ".tmp-customfield-"));
+  });
+  afterAll(async () => {
+    await rm(pkgTmp, { recursive: true, force: true });
+  });
+
+  // A Backstage field extension the DSL has no first-class builder for: uiField +
+  // customType (object) + uiOptions, revealed by a controller (showWhen), with an object
+  // exampleValue. It reaches core's p.customField.
+  const model: MigrationModel = {
+    modelVersion: "1",
+    template: { id: "cake-order", title: "Cake order", type: "service" },
+    questions: [
+      {
+        name: "orderType",
+        type: "choice",
+        title: "Order type",
+        options: { wedding: "Wedding", birthday: "Birthday" },
+        required: true,
+        exampleValue: "wedding",
+        page: "Order",
+      },
+      {
+        name: "cakeChoice",
+        type: "customField",
+        title: "Cake",
+        uiField: "CakePickerWithDefault",
+        customType: "object",
+        uiOptions: { path: "bakery-catalog/entities", valueSelector: "metadata.name" },
+        exampleValue: { id: "c1", name: "Sponge" },
+        page: "Order",
+        visibleWhen: { field: "orderType", is: "wedding" },
+      },
+    ],
+  };
+
+  test("the model validates", () => {
+    const r = validateModel(model);
+    if (!r.valid) throw new Error(formatModelErrors(r.errors));
+    expect(r.valid).toBe(true);
+  });
+
+  test("prints p.customField with uiField, type, uiOptions, and a showWhen chain", () => {
+    const ts = printTemplate(model).files["template.ts"];
+    // An EXPLICIT p.customField call (not a p.customField-by-coincidence fallthrough).
+    expect(ts).toContain("export const cakeChoice = p.customField({");
+    expect(ts).toContain('uiField: "CakePickerWithDefault"');
+    expect(ts).toContain('type: "object"');
+    expect(ts).toContain('uiOptions: { path: "bakery-catalog/entities", valueSelector: "metadata.name" }');
+    expect(ts).toContain('.showWhen(orderType.is("wedding"))');
+  });
+
+  test("the object exampleValue rides into the generated scenarios", () => {
+    const scenarios = printTemplate(model).files["__fixtures__/scenarios.ts"];
+    expect(scenarios).toContain('cakeChoice: { id: "c1", name: "Sponge" }');
+  });
+
+  test("the printed template compiles + validates, and the YAML carries ui:field (gate 1 smoke)", async () => {
+    const ts = printTemplate(model).files["template.ts"];
+    const file = join(pkgTmp, "cake-order.ts");
+    await writeFile(file, ts, "utf8");
+    const mod = (await import(`${file}?t=${Date.now()}`)) as { default: never };
+    const { object, yaml } = await compileResolved(mod.default, { env: "test", outDir: "" });
+    const result = await validate(object);
+    expect(result.valid).toBe(true);
+    // The custom field extension name reaches the compiled Scaffolder YAML verbatim.
+    expect(yaml).toContain("ui:field: CakePickerWithDefault");
   });
 });
