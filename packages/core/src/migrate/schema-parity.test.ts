@@ -52,6 +52,18 @@ const typedValid: MigrationModel[] = [
         uiOptions: { rows: 5 },
         page: "P",
       },
+      // A customField: uiField + customType, an object exampleValue, uiOptions — the
+      // Backstage field-extension escape hatch, accepted by both the TS type and schema.
+      {
+        name: "cf",
+        type: "customField",
+        title: "Cake line",
+        uiField: "CakePickerWithDefault",
+        customType: "object",
+        uiOptions: { path: "bakery-catalog/entities" },
+        exampleValue: { id: "cl-1", name: "Sponge" },
+        page: "P",
+      },
     ],
     logic: [
       { name: "t1", op: "template", template: "{a}", bindings: { a: { op: "fieldRef", field: "st" } } },
@@ -141,6 +153,14 @@ describe("schema rejects malformed documents", () => {
     [
       "effect without actionRef",
       { modelVersion: "1", template: { id: "a", title: "A" }, questions: [], effects: [{ name: "e", kind: "k" }] },
+    ],
+    [
+      "customType of a non-string type",
+      {
+        modelVersion: "1",
+        template: { id: "a", title: "A" },
+        questions: [{ name: "x", type: "customField", uiField: "CakePickerWithDefault", customType: 5, page: "P" }],
+      },
     ],
   ];
   test.each(invalid)("rejects: %s", (_label, doc) => {

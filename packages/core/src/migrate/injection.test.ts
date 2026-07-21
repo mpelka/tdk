@@ -231,3 +231,83 @@ describe("extraSpec — the emission-safe escape hatch", () => {
     expect(spec["catalog-metadata"]).toEqual(hostileExtraSpec["catalog-metadata"]);
   });
 });
+
+// A customField carries two free-form string positions the DSL has no first-class builder
+// for — `uiField` (emitted as `ui:field`) and `customType` (emitted as the value's schema
+// `type`) — plus a free-form `exampleValue`. All three land through `lit()` (JSON.stringify
+// at each leaf), the same emission-safe path as `uiWidget` / `uiOptions` / `extraSpec`. So
+// hostile characters cannot break out; they round-trip faithfully. This suite proves both
+// halves: validation ACCEPTS the hostile values (they are exempt from the strict char rules,
+// exactly like `uiWidget`), and the emitted files PARSE and carry the values byte-for-byte.
+describe("customField — uiField / customType / exampleValue are emission-safe", () => {
+  let pkgTmp: string;
+  beforeAll(async () => {
+    pkgTmp = await mkdtemp(join(here, "..", ".tmp-customfield-inj-"));
+  });
+  afterAll(async () => {
+    await rm(pkgTmp, { recursive: true, force: true });
+  });
+
+  // Every classic breakout character across all three positions, each a SINGLE string
+  // literal (backtick, `${`, `\n`, `\r`, and a double quote). NB: `${...}` is literal in a
+  // quoted string (only a backtick template would interpolate it); the point is the PRINTER
+  // must not let it interpolate in the EMITTED code either.
+  const hostileUiField = 'Cake`${x}Picker\n\r"end';
+  const hostileCustomType = 'obj`${y}\n"z';
+  const hostileExample = {
+    risk: 'a`b${c}\nd"e',
+    deep: ["f`g", "${i}\rj"],
+  };
+
+  function cfModel(id: string): MigrationModel {
+    return {
+      modelVersion: "1",
+      template: { id, title: "Hostile customField", type: "service" },
+      questions: [
+        {
+          name: "picker",
+          type: "customField",
+          title: "Picker",
+          uiField: hostileUiField,
+          customType: hostileCustomType,
+          exampleValue: hostileExample,
+          page: "P",
+        },
+      ],
+    };
+  }
+
+  test("validation ACCEPTS hostile uiField / customType / exampleValue (exempt like uiWidget)", () => {
+    const r = validateModel(cfModel("cf-inj-valid"));
+    if (!r.valid) throw new Error(formatModelErrors(r.errors));
+    expect(r.valid).toBe(true);
+  });
+
+  test("the emitted template PARSES and uiField / customType round-trip into the compiled schema", async () => {
+    const model = cfModel("cf-inj-roundtrip");
+    expect(validateModel(model).valid).toBe(true);
+
+    const ts = printTemplate(model).files["template.ts"];
+    expect(ts).toContain("p.customField({");
+
+    const file = join(pkgTmp, "cf-inj-roundtrip.ts");
+    await writeFile(file, ts, "utf8");
+    const mod = (await import(`${file}?t=${Date.now()}`)) as { default: unknown };
+    const { object } = await compileResolved(mod.default as never, { env: "test", outDir: "" });
+    const [page1] = (object.spec as { parameters: Array<{ properties: Record<string, Record<string, unknown>> }> })
+      .parameters;
+    const prop = page1.properties.picker;
+    expect(prop["ui:field"]).toBe(hostileUiField);
+    expect(prop.type).toBe(hostileCustomType);
+  });
+
+  test("the emitted scenarios PARSE and the object exampleValue round-trips faithfully", async () => {
+    const scenarios = printTemplate(cfModel("cf-inj-scenarios")).files["__fixtures__/scenarios.ts"];
+    const file = join(pkgTmp, "cf-inj-scenarios.ts");
+    await writeFile(file, scenarios, "utf8");
+    const mod = (await import(`${file}?t=${Date.now()}`)) as {
+      scenarios: Array<{ fixture: { parameters: Record<string, unknown> } }>;
+    };
+    expect(mod.scenarios[0].fixture.parameters.picker).toEqual(hostileExample);
+  });
+});

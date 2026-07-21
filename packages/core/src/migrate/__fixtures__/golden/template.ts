@@ -20,6 +20,7 @@ export const severity = p.choice({ low: "Low", normal: "Normal", urgent: "Urgent
 export const urgentReason = p.string({ title: "Why is this urgent?" }).showWhen(severity.is("urgent"));
 export const escalate = p.boolean({ title: "Escalate to the facilities lead?" }).showWhen(all(faultType.is("other"), severity.in(["normal", "urgent"])));
 export const partNumbers = p.array({ title: "Replacement part numbers" });
+export const cakeLine = p.customField({ title: "Affected cake line", description: "The bakery-catalog cake line this oven produces.", uiField: "CakePickerWithDefault", uiOptions: { path: "bakery-catalog/entities?filter=kind=CakeLine", valueSelector: "metadata.name" }, type: "object" });
 
 // --- Logic node 'job-summary' -> a derive ----------------------------------------
 export const jobSummary = derive("job-summary", { ovenId, bakeryCode }, (i) => `Oven ${i.ovenId} at ${i.bakeryCode}`);
@@ -69,7 +70,7 @@ export default defineTemplate({
   pages: [
     page("Site", { bakeryCode, ovenId, ovenCount }),
     page("Fault", { faultType, faultDetail, severity, urgentReason, escalate }),
-    page("Parts", { partNumbers }),
+    page("Parts", { partNumbers, cakeLine }),
   ],
   effects: [submitRequest, notifyFacilities],
   output: {

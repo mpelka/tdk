@@ -20,6 +20,7 @@ export const scenarios = [
         urgentReason: "Production line stopped",
         escalate: true,
         partNumbers: ["A1", "B2"],
+        cakeLine: { id: "cake-line-sourdough", name: "Sourdough loaf" },
       },
       steps: {
         "submit-request": { output: { body: { id: "submit-request-id" } } },
