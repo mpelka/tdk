@@ -379,3 +379,15 @@ the honest-fallback invariant in miniature:
   but stays emission-safe: the printer renders it through the faithful `lit()` encoding
   the other safe positions use, so hostile characters round-trip into the compiled spec
   rather than injecting code. A model-only, additive change (`modelVersion` stays `"1"`).
+- 2026-07-21 — the question node gained a `customField` type plus two members, `uiField`
+  and `customType`: the escape hatch for Backstage custom field extensions (RJSF
+  `ui:field`). A real migration hit legacy forms built on bespoke pickers — object-valued
+  fields no first-class `p.*` builder models — so the printer now emits core's existing
+  `p.customField`. `uiField` is legal on any question type (mirroring core, where every
+  param accepts it); the pairings the schema cannot express are semantic-check errors: a
+  `customField` requires its `uiField`, `customType` (the value's JSON-Schema `type`,
+  e.g. `object`) belongs only to a `customField`, and `options` belongs only to a
+  `choice` (previously a silent printer drop). Both new members are exempt from the
+  strict name/id character rules like `uiWidget`/`uiOptions`, and stay emission-safe
+  through the same `lit()` path, pinned by injection probes. A model-only, additive
+  change (`modelVersion` stays `"1"`).
